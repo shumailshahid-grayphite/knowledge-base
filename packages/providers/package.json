@@ -1,0 +1,28 @@
+{
+  "name": "@kb/providers",
+  "version": "0.0.1",
+  "private": true,
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "description": "AI provider implementations (OpenAI + deterministic fake) behind @kb/shared interfaces. Real when OPENAI_API_KEY is set, fake otherwise. Fake logic is isolated here.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kb/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.2"
+  }
+}

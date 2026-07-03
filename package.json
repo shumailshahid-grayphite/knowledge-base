@@ -1,0 +1,30 @@
+{
+  "name": "knowledge-base-grayphite",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Reusable enterprise knowledge base: ingest, process, embed, retrieve with citations. Agent-ready retrieval layer.",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "db:migrate": "pnpm --filter @kb/db migrate",
+    "db:seed": "pnpm --filter @kb/db seed",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down"
+  },
+  "devDependencies": {
+    "turbo": "^2.1.0",
+    "typescript": "^5.5.4"
+  },
+  "pnpm": {
+    "overrides": {
+      "ioredis": "5.11.1"
+    }
+  }
+}
