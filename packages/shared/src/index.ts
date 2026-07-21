@@ -15,5 +15,6 @@ export * from './providers/reranker.js';
 // DTOs
 export * from './dto/auth.js';
 export * from './dto/space.js';
+export * from './dto/folder.js';
 export * from './dto/document.js';
 export * from './dto/query.js';

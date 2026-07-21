@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Selectable } from 'kysely';
-import type { KnowledgeSpacesTable } from '@kb/db';
+import type { KnowledgeBaseTable } from '@kb/db';
 import {
   ChunkConfig,
   type AuthUser,
@@ -20,7 +20,7 @@ export class SpacesService {
   async create(user: AuthUser, input: CreateSpaceRequest): Promise<SpaceResponse> {
     const chunkConfig = ChunkConfig.parse({ ...(input.chunkConfig ?? {}) });
     const row = await this.database.db
-      .insertInto('knowledge_spaces')
+      .insertInto('knowledge_base')
       .values({
         organization_id: user.organizationId,
         name: input.name,
@@ -34,14 +34,47 @@ export class SpacesService {
     return this.toResponse(row, 0);
   }
 
+  /**
+   * The org's single implicit knowledge base. Returns the oldest space, creating
+   * a "Company Knowledge Base" if none exists. Concurrency-safe via the
+   * knowledge_base (organization_id, lower(name)) unique index.
+   */
+  async getOrCreateDefault(user: AuthUser): Promise<SpaceResponse> {
+    const existing = await this.database.db
+      .selectFrom('knowledge_base')
+      .selectAll()
+      .where('organization_id', '=', user.organizationId)
+      .orderBy('created_at', 'asc')
+      .limit(1)
+      .executeTakeFirst();
+    if (existing) return this.get(user, existing.id);
+
+    try {
+      return await this.create(user, { name: 'Company Knowledge Base' });
+    } catch (err) {
+      // Lost a concurrent create -> read the winner.
+      if (typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505') {
+        const row = await this.database.db
+          .selectFrom('knowledge_base')
+          .selectAll()
+          .where('organization_id', '=', user.organizationId)
+          .orderBy('created_at', 'asc')
+          .limit(1)
+          .executeTakeFirstOrThrow();
+        return this.get(user, row.id);
+      }
+      throw err;
+    }
+  }
+
   async list(user: AuthUser): Promise<SpaceResponse[]> {
     const rows = await this.database.db
-      .selectFrom('knowledge_spaces')
-      .selectAll('knowledge_spaces')
+      .selectFrom('knowledge_base')
+      .selectAll('knowledge_base')
       .select((eb) =>
         eb
           .selectFrom('documents')
-          .whereRef('documents.space_id', '=', 'knowledge_spaces.id')
+          .whereRef('documents.knowledge_base_id', '=', 'knowledge_base.id')
           .select(eb.fn.countAll<string>().as('c'))
           .as('document_count'),
       )
@@ -59,7 +92,7 @@ export class SpacesService {
     const count = await this.database.db
       .selectFrom('documents')
       .select((eb) => eb.fn.countAll<string>().as('c'))
-      .where('space_id', '=', spaceId)
+      .where('knowledge_base_id', '=', spaceId)
       .where('organization_id', '=', user.organizationId)
       .executeTakeFirst();
     return this.toResponse(row, Number(count?.c ?? 0));
@@ -69,9 +102,9 @@ export class SpacesService {
   async requireSpace(
     organizationId: string,
     spaceId: string,
-  ): Promise<Selectable<KnowledgeSpacesTable>> {
+  ): Promise<Selectable<KnowledgeBaseTable>> {
     const row = await this.database.db
-      .selectFrom('knowledge_spaces')
+      .selectFrom('knowledge_base')
       .selectAll()
       .where('id', '=', spaceId)
       .where('organization_id', '=', organizationId)
@@ -82,7 +115,7 @@ export class SpacesService {
     return row;
   }
 
-  private toResponse(row: Selectable<KnowledgeSpacesTable>, documentCount: number): SpaceResponse {
+  private toResponse(row: Selectable<KnowledgeBaseTable>, documentCount: number): SpaceResponse {
     const chunkConfig = ChunkConfig.parse(
       typeof row.chunk_config === 'string' ? JSON.parse(row.chunk_config) : row.chunk_config,
     );

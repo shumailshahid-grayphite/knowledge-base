@@ -5,7 +5,11 @@ export const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_PORT: z.coerce.number().int().default(4000),
 
+  // Admin connection (migrations/seed run as this superuser). RLS is bypassed by superusers.
   DATABASE_URL: z.string().min(1),
+  // Runtime pool connection: a NON-superuser role so RLS (app.current_org) is enforced.
+  // Falls back to DATABASE_URL when unset (dev without RLS armed).
+  APP_DATABASE_URL: z.string().optional(),
 
   REDIS_URL: z.string().min(1),
   QUEUE_PREFIX: z.string().default('kb'),

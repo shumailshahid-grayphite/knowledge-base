@@ -4,6 +4,8 @@ import { z } from 'zod';
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().min(1),
+  // Non-superuser runtime pool so RLS is enforced; falls back to DATABASE_URL.
+  APP_DATABASE_URL: z.string().optional(),
   REDIS_URL: z.string().min(1),
   QUEUE_PREFIX: z.string().default('kb'),
   STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),

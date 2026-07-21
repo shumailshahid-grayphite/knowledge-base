@@ -27,6 +27,8 @@ import { STORAGE_PROVIDER } from '../storage/storage.tokens.js';
 import { resolveSupportedMime, sanitizeFileName } from './mime.util.js';
 import type { UploadedFileLike } from '../common/types.js';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
@@ -46,11 +48,16 @@ export class DocumentsService {
     user: AuthUser,
     spaceId: string,
     file: UploadedFileLike | undefined,
+    folderId?: string,
   ): Promise<DocumentResponse> {
     if (!file) {
       throw new BadRequestException('No file provided (expected multipart field "file")');
     }
     await this.spaces.requireSpace(user.organizationId, spaceId);
+
+    // Resolve the target folder (optional). A filed doc carries folder_id + a
+    // denormalized folder_path for prefix-based subtree retrieval.
+    const folder = await this.resolveFolder(user.organizationId, spaceId, folderId);
 
     const mimeType = resolveSupportedMime(file.originalname, file.mimetype);
     if (!mimeType) {
@@ -67,7 +74,9 @@ export class DocumentsService {
       .insertInto('documents')
       .values({
         organization_id: user.organizationId,
-        space_id: spaceId,
+        knowledge_base_id: spaceId,
+        folder_id: folder?.id ?? null,
+        folder_path: folder?.path ?? null,
         source_type: ConnectorType.Upload,
         file_name: fileName,
         mime_type: mimeType,
@@ -188,7 +197,7 @@ export class DocumentsService {
       contractVersion: CONTRACT_VERSION,
       jobType: 'ingest_document_version',
       organizationId: user.organizationId,
-      spaceId: doc.space_id,
+      spaceId: doc.knowledge_base_id,
       documentId,
       versionId: doc.current_version_id,
       storageKey: doc.storage_key,
@@ -210,9 +219,12 @@ export class DocumentsService {
       .selectFrom('documents')
       .selectAll()
       .where('organization_id', '=', user.organizationId)
-      .where('space_id', '=', spaceId);
+      .where('knowledge_base_id', '=', spaceId);
     if (query.status) {
       q = q.where('status', '=', query.status);
+    }
+    if (query.folderId) {
+      q = q.where('folder_id', '=', query.folderId);
     }
     const rows = await q
       .orderBy('created_at', 'desc')
@@ -225,6 +237,25 @@ export class DocumentsService {
   async getById(user: AuthUser, documentId: string): Promise<DocumentResponse> {
     const row = await this.requireDocument(user.organizationId, documentId);
     return this.toResponse(row);
+  }
+
+  /** Validate an optional folderId belongs to the space; returns its id+path. */
+  private async resolveFolder(
+    organizationId: string,
+    spaceId: string,
+    folderId: string | undefined,
+  ): Promise<{ id: string; path: string } | null> {
+    if (!folderId) return null;
+    if (!UUID_RE.test(folderId)) throw new BadRequestException('Invalid folderId');
+    const folder = await this.database.db
+      .selectFrom('folders')
+      .select(['id', 'path'])
+      .where('id', '=', folderId)
+      .where('knowledge_base_id', '=', spaceId)
+      .where('organization_id', '=', organizationId)
+      .executeTakeFirst();
+    if (!folder) throw new BadRequestException('Folder not found in this space');
+    return folder;
   }
 
   private async requireDocument(
@@ -257,12 +288,13 @@ export class DocumentsService {
   private toResponse(row: Selectable<DocumentsTable>): DocumentResponse {
     return {
       id: row.id,
-      spaceId: row.space_id,
+      spaceId: row.knowledge_base_id,
       fileName: row.file_name,
       mimeType: row.mime_type,
       fileSize: row.file_size === null ? null : Number(row.file_size),
       sourceType: row.source_type,
       sourceUrl: row.source_url,
+      folderId: row.folder_id,
       folderPath: row.folder_path,
       status: row.status,
       errorMessage: row.error_message,

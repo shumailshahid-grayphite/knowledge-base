@@ -3,6 +3,7 @@ import { Worker } from 'bullmq';
 import IORedis, { type Redis } from 'ioredis';
 import { QUEUE, type SyncJobV1 } from '@kb/shared';
 import { AppConfigService } from '../config/app-config.service.js';
+import { DatabaseService } from '../database/database.service.js';
 import { ConnectorIngestionService } from './connector-ingestion.service.js';
 
 /** Consumes the `sync` queue and runs connector ingestion. */
@@ -14,6 +15,7 @@ export class SyncWorker implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly config: AppConfigService,
+    private readonly database: DatabaseService,
     private readonly ingestion: ConnectorIngestionService,
   ) {}
 
@@ -22,7 +24,8 @@ export class SyncWorker implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker(
       QUEUE.Sync,
       async (job) => {
-        await this.ingestion.runSync(job.data as SyncJobV1);
+        const data = job.data as SyncJobV1;
+        await this.database.runWithTenant(data.organizationId, () => this.ingestion.runSync(data));
       },
       {
         connection: this.connection,

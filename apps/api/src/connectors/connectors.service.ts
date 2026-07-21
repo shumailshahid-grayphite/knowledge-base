@@ -126,7 +126,7 @@ export class ConnectorsService {
       .values({
         organization_id: user.organizationId,
         connector_id: connectorId,
-        space_id: spaceId,
+        knowledge_base_id: spaceId,
         selector: JSON.stringify(input.selector ?? {}),
         status: 'queued',
       })

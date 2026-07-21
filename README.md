@@ -28,23 +28,51 @@ packages/
 
 ## Prerequisites
 
-- Node ≥ 20, pnpm ≥ 9, Docker (for Postgres+pgvector and Redis).
+Container-first: you only need **Docker + Docker Compose + Git**. No local Node,
+Postgres, Redis, or pgvector required.
 
-## Setup
+> **macOS note:** Docker Desktop requires a recent macOS. On older machines use
+> **Colima** (or Rancher Desktop) as the engine — same `docker` / `docker compose` CLI:
+> ```bash
+> brew install colima docker docker-compose
+> colima start           # boots a lightweight Linux VM (the Docker daemon)
+> ```
+
+## Setup (container-first — recommended)
 
 ```bash
 cp .env.example .env
-docker compose up -d                       # postgres(pgvector) + redis
+docker compose up                          # builds web+api+worker, runs pg+redis, applies migrations
 
+# seed demo data (1 org, owner@acme.test, 1 space) — optional, one-shot:
+docker compose --profile seed up seed
+```
+
+That's it. Services:
+
+| Service | URL |
+|---|---|
+| Web (Next.js)   | http://localhost:3000 |
+| API (NestJS)    | http://localhost:4000 (`/health`) |
+| Worker          | background (BullMQ) |
+| Postgres+pgvector / Redis | internal (5432 / 6379, not published) |
+
+The `migrate` service runs to completion (gated on a Postgres healthcheck) before
+`api`/`worker` start. `api` and `worker` share a `storage` volume so the worker can
+read uploaded files. Named volumes (`pgdata`, `redisdata`, `storage`) persist across
+`docker compose down`; use `down -v` to wipe.
+
+## Setup (native, no containers)
+
+Requires Node ≥ 20, pnpm ≥ 9, and a local Postgres+pgvector + Redis.
+
+```bash
+cp .env.example .env
+# start your own postgres(pgvector) + redis, then:
 pnpm install
-pnpm --filter @kb/shared build
-pnpm --filter @kb/db build
-pnpm --filter @kb/providers build
-
-pnpm db:migrate                            # apply SQL migrations
+pnpm --filter @kb/shared build && pnpm --filter @kb/db build && pnpm --filter @kb/providers build
+pnpm db:migrate
 pnpm db:seed                               # 1 org, 1 user (owner@acme.test), 1 space
-
-# Run API + worker (no OPENAI_API_KEY -> deterministic fake embeddings)
 AUTH_DEV_MODE=true pnpm --filter @kb/api dev
 pnpm --filter @kb/worker dev
 ```

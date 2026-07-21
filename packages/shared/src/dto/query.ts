@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 export const RetrievalFilters = z.object({
   sourceType: z.string().optional(),
+  /** Scope to a folder and its whole subtree; resolved from folderId server-side. */
+  folderId: z.string().uuid().optional(),
   folderPathPrefix: z.string().optional(),
   documentIds: z.array(z.string().uuid()).optional(),
 });

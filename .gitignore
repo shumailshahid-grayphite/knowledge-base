@@ -13,6 +13,9 @@ coverage/
 # local object storage
 .data/
 
+# pgvector extension source (cloned locally to build against postgresql@14; not project code)
+pgvector/
+
 # logs
 *.log
 npm-debug.log*

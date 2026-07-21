@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
@@ -35,8 +36,10 @@ export class DocumentsController {
     @CurrentUser() user: AuthUser,
     @Param('spaceId', new ParseUUIDPipe()) spaceId: string,
     @UploadedFile() file: UploadedFileLike | undefined,
+    // Optional multipart text field; when present the doc is filed into that folder.
+    @Body('folderId') folderId: string | undefined,
   ): Promise<DocumentResponse> {
-    return this.documents.upload(user, spaceId, file);
+    return this.documents.upload(user, spaceId, file, folderId);
   }
 
   @Get('spaces/:spaceId/documents')

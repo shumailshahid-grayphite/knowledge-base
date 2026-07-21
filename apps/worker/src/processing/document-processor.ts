@@ -141,10 +141,10 @@ export class DocumentProcessor {
     const row = await this.database.db
       .selectFrom('document_versions as v')
       .innerJoin('documents as d', 'd.id', 'v.document_id')
-      .innerJoin('knowledge_spaces as s', 's.id', 'd.space_id')
+      .innerJoin('knowledge_base as s', 's.id', 'd.knowledge_base_id')
       .select([
         'd.organization_id as orgId',
-        'd.space_id as spaceId',
+        'd.knowledge_base_id as spaceId',
         'd.id as documentId',
         'v.id as versionId',
         'v.storage_key as storageKey',
@@ -174,7 +174,7 @@ export class DocumentProcessor {
   ): Promise<Array<{ id: string; chunk_index: number }>> {
     const rows = pieces.map((p) => ({
       organization_id: ctx.orgId,
-      space_id: ctx.spaceId,
+      knowledge_base_id: ctx.spaceId,
       document_id: ctx.documentId,
       version_id: ctx.versionId,
       chunk_index: p.index,

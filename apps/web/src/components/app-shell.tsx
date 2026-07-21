@@ -3,14 +3,14 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
-import { FileText, LayoutDashboard, Library, Plug, Settings, LogOut } from 'lucide-react';
+import { FileText, Library, MessagesSquare, Plug, Settings, LogOut } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
 const NAV = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/spaces', label: 'Knowledge Spaces', icon: Library },
+  { href: '/', label: 'Knowledge Base', icon: Library },
+  { href: '/ask', label: 'Ask', icon: MessagesSquare },
   { href: '/connectors', label: 'Connect Sources', icon: Plug },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
@@ -43,7 +43,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <nav className="mt-4 flex flex-col gap-1">
           {NAV.map((item) => {
-            const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+            const active =
+              item.href === '/'
+                ? pathname === '/' || pathname.startsWith('/folders')
+                : pathname === item.href || pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}

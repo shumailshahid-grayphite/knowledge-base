@@ -156,7 +156,7 @@ export class ConnectorIngestionService {
         .insertInto('documents')
         .values({
           organization_id: payload.organizationId,
-          space_id: payload.spaceId,
+          knowledge_base_id: payload.spaceId,
           source_type: connector.type,
           source_connector_id: payload.connectorId,
           source_item_id: file.sourceItemId,

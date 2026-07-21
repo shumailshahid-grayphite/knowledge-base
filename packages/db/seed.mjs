@@ -49,7 +49,7 @@ async function main() {
     );
 
     await client.query(
-      `INSERT INTO knowledge_spaces (id, organization_id, name, description, created_by)
+      `INSERT INTO knowledge_base (id, organization_id, name, description, created_by)
        VALUES ($1, $2, 'Consulting Frameworks', 'Seed space for development', $3)
        ON CONFLICT (id) DO NOTHING;`,
       [SPACE_ID, ORG_ID, USER_ID],

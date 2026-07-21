@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type {
   AuthUser,
   Citation,
@@ -29,12 +29,16 @@ export class QueryService {
     const startedAt = Date.now();
     await this.spaces.requireSpace(user.organizationId, spaceId);
 
+    // Resolve an optional folder filter to its materialized-path prefix so search
+    // scopes to that folder AND its whole subtree. folderId wins over any raw prefix.
+    const filters = await this.resolveFolderFilter(user, spaceId, req.filters);
+
     const chunks = await this.retrieval.retrieve({
       organizationId: user.organizationId,
       spaceId,
       question: req.question,
       topK: req.topK,
-      filters: req.filters,
+      filters,
     });
 
     let answer: string;
@@ -73,13 +77,31 @@ export class QueryService {
     return { answer, noAnswer, citations, sessionId };
   }
 
+  /** Turn filters.folderId into a folder_path prefix (scoped to org+space). */
+  private async resolveFolderFilter(
+    user: AuthUser,
+    spaceId: string,
+    filters: QueryRequest['filters'],
+  ): Promise<QueryRequest['filters']> {
+    if (!filters?.folderId) return filters;
+    const folder = await this.database.db
+      .selectFrom('folders')
+      .select('path')
+      .where('id', '=', filters.folderId)
+      .where('knowledge_base_id', '=', spaceId)
+      .where('organization_id', '=', user.organizationId)
+      .executeTakeFirst();
+    if (!folder) throw new NotFoundException('Folder not found in this space');
+    return { ...filters, folderPathPrefix: folder.path };
+  }
+
   async recentLogs(user: AuthUser, spaceId: string) {
     await this.spaces.requireSpace(user.organizationId, spaceId);
     return this.database.db
       .selectFrom('retrieval_logs')
       .select(['id', 'query', 'answer', 'citations', 'model', 'latency_ms as latencyMs', 'created_at as createdAt'])
       .where('organization_id', '=', user.organizationId)
-      .where('space_id', '=', spaceId)
+      .where('knowledge_base_id', '=', spaceId)
       .orderBy('created_at', 'desc')
       .limit(20)
       .execute();
@@ -106,7 +128,7 @@ export class QueryService {
         .select('id')
         .where('id', '=', sessionId)
         .where('organization_id', '=', user.organizationId)
-        .where('space_id', '=', spaceId)
+        .where('knowledge_base_id', '=', spaceId)
         .executeTakeFirst();
       if (!existing) sessionId = null;
     }
@@ -115,7 +137,7 @@ export class QueryService {
         .insertInto('query_sessions')
         .values({
           organization_id: user.organizationId,
-          space_id: spaceId,
+          knowledge_base_id: spaceId,
           user_id: user.id,
           title: req.question.slice(0, 80),
         })
@@ -148,7 +170,7 @@ export class QueryService {
       .insertInto('retrieval_logs')
       .values({
         organization_id: user.organizationId,
-        space_id: spaceId,
+        knowledge_base_id: spaceId,
         user_id: user.id,
         session_id: sessionId,
         source: 'chat',

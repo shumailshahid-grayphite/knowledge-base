@@ -41,7 +41,7 @@ export class VectorStoreService implements VectorStore {
              1 - (embedding <=> ${literal}::vector) as score
         from chunks
        where organization_id = ${filter.organizationId}
-         and space_id = ${filter.spaceId}
+         and knowledge_base_id = ${filter.spaceId}
          and embedding is not null
        order by embedding <=> ${literal}::vector
        limit ${topK}

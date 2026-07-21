@@ -16,6 +16,7 @@ export const DocumentResponse = z.object({
     'confluence',
   ]),
   sourceUrl: z.string().nullable(),
+  folderId: z.string().uuid().nullable(),
   folderPath: z.string().nullable(),
   status: z.enum(['uploaded', 'queued', 'processing', 'completed', 'failed', 'needs_review']),
   errorMessage: z.string().nullable(),
@@ -28,6 +29,8 @@ export const ListDocumentsQuery = z.object({
   status: z
     .enum(['uploaded', 'queued', 'processing', 'completed', 'failed', 'needs_review'])
     .optional(),
+  /** Restrict to documents directly in this folder (exact match, not subtree). */
+  folderId: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });

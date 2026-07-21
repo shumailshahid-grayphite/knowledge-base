@@ -1,0 +1,16 @@
+# Never copy host build artifacts / secrets / data into the image
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+.git
+.github
+.data
+*.log
+.env
+.env.*
+!.env.example
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+scratchpad

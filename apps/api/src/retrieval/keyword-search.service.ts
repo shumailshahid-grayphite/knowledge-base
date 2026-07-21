@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { ConnectorType } from '@kb/db';
 import { DatabaseService } from '../database/database.service.js';
+import { likeStartsWith } from '../common/like.util.js';
 import type { VectorSearchParams } from './vector-search.service.js';
 
 export interface KeywordHit {
@@ -29,7 +30,7 @@ export class KeywordSearchService {
       .select(['c.id as chunkId', 'c.document_id as documentId'])
       .select(sql<number>`ts_rank_cd(${tsvector}, ${tsquery})`.as('score'))
       .where('c.organization_id', '=', params.organizationId)
-      .where('c.space_id', '=', params.spaceId)
+      .where('c.knowledge_base_id', '=', params.spaceId)
       .where('d.status', '=', 'completed')
       .whereRef('c.version_id', '=', 'd.current_version_id')
       .where(sql<boolean>`${tsvector} @@ ${tsquery}`)
@@ -41,7 +42,7 @@ export class KeywordSearchService {
       q = q.where('d.source_type', '=', f.sourceType as ConnectorType);
     }
     if (f?.folderPathPrefix) {
-      q = q.where('d.folder_path', 'like', `${f.folderPathPrefix}%`);
+      q = q.where(sql<boolean>`d.folder_path LIKE ${likeStartsWith(f.folderPathPrefix)} ESCAPE '\\'`);
     }
     if (f?.documentIds && f.documentIds.length > 0) {
       q = q.where('c.document_id', 'in', f.documentIds);

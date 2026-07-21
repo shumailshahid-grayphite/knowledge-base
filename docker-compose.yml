@@ -1,3 +1,20 @@
+name: kb
+
+# Base stack: `docker compose up` builds images and runs the full migrated stack.
+# Host-specific connection strings are overridden here so containers reach each
+# other by service name; everything else comes from `.env` (env_file).
+# For hot-reload dev, add: -f docker-compose.yml -f docker-compose.dev.yml
+
+x-app-env: &app-env
+  NODE_ENV: development            # keep fake AI providers usable without OPENAI_API_KEY
+  # Admin URL (superuser) is only a fallback here; the runtime pool uses the
+  # non-superuser kb_app role so Postgres RLS (app.current_org) is enforced.
+  DATABASE_URL: postgres://kb:kb@postgres:5432/kb
+  APP_DATABASE_URL: postgres://kb_app:kb_app@postgres:5432/kb
+  REDIS_URL: redis://redis:6379
+  STORAGE_DRIVER: local
+  STORAGE_LOCAL_DIR: /data/storage # shared volume between api + worker
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -6,29 +23,117 @@ services:
       POSTGRES_USER: kb
       POSTGRES_PASSWORD: kb
       POSTGRES_DB: kb
-    ports:
-      - '5432:5432'
     volumes:
-      - kb-pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U kb -d kb']
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
 
   redis:
     image: redis:7-alpine
     container_name: kb-redis
-    ports:
-      - '6379:6379'
+    command: ['redis-server', '--appendonly', 'yes']
     volumes:
-      - kb-redisdata:/data
+      - redisdata:/data
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 5s
+      retries: 20
+
+  # One-shot: applies SQL migrations to completion, then exits 0.
+  migrate:
+    build:
+      context: .
+      target: migrate
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://kb:kb@postgres:5432/kb
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      target: api
+    container_name: kb-api
+    env_file: .env
+    environment:
+      <<: *app-env
+      API_PORT: '4000'
+      AUTH_DEV_MODE: 'true'
+    ports:
+      - '4000:4000'
+    volumes:
+      - storage:/data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
       retries: 10
+      start_period: 20s
+
+  worker:
+    build:
+      context: .
+      target: worker
+    container_name: kb-worker
+    env_file: .env
+    environment:
+      <<: *app-env
+      WORKER_CONCURRENCY: '4'
+    volumes:
+      - storage:/data/storage        # MUST match api: worker reads what api wrote
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      target: web
+    container_name: kb-web
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:4000   # browser -> host-published api
+    ports:
+      - '3000:3000'
+    depends_on:
+      - api
+
+  # Optional: `docker compose --profile seed up seed` to seed demo data.
+  seed:
+    profiles: ['seed']
+    build:
+      context: .
+      target: migrate
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://kb:kb@postgres:5432/kb
+    command: ['pnpm', 'db:seed']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
-  kb-pgdata:
-  kb-redisdata:
+  pgdata:
+  redisdata:
+  storage:

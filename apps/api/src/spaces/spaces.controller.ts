@@ -27,6 +27,12 @@ export class SpacesController {
     return this.spaces.list(user);
   }
 
+  // MUST be declared before @Get(':id') — otherwise ParseUUIDPipe rejects "default".
+  @Get('default')
+  getDefault(@CurrentUser() user: AuthUser): Promise<SpaceResponse> {
+    return this.spaces.getOrCreateDefault(user);
+  }
+
   @Get(':id')
   get(
     @CurrentUser() user: AuthUser,

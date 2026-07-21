@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import type { ConnectorType } from '@kb/db';
 import type { RetrievalFilters } from '@kb/shared';
 import { DatabaseService } from '../database/database.service.js';
+import { likeStartsWith } from '../common/like.util.js';
 
 export interface VectorHit {
   chunkId: string;
@@ -32,7 +33,7 @@ export class VectorSearchService {
       .select(['c.id as chunkId', 'c.document_id as documentId'])
       .select(sql<number>`1 - (c.embedding <=> ${literal}::vector)`.as('score'))
       .where('c.organization_id', '=', params.organizationId)
-      .where('c.space_id', '=', params.spaceId)
+      .where('c.knowledge_base_id', '=', params.spaceId)
       .where('c.embedding', 'is not', null)
       // Only completed documents' latest version.
       .where('d.status', '=', 'completed')
@@ -45,7 +46,7 @@ export class VectorSearchService {
       q = q.where('d.source_type', '=', f.sourceType as ConnectorType);
     }
     if (f?.folderPathPrefix) {
-      q = q.where('d.folder_path', 'like', `${f.folderPathPrefix}%`);
+      q = q.where(sql<boolean>`d.folder_path LIKE ${likeStartsWith(f.folderPathPrefix)} ESCAPE '\\'`);
     }
     if (f?.documentIds && f.documentIds.length > 0) {
       q = q.where('c.document_id', 'in', f.documentIds);

@@ -3,6 +3,7 @@ import { Worker } from 'bullmq';
 import IORedis, { type Redis } from 'ioredis';
 import { QUEUE, type IngestJobV1 } from '@kb/shared';
 import { AppConfigService } from '../config/app-config.service.js';
+import { DatabaseService } from '../database/database.service.js';
 import { DocumentProcessor } from '../processing/document-processor.js';
 
 /**
@@ -18,6 +19,7 @@ export class IngestWorker implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly config: AppConfigService,
+    private readonly database: DatabaseService,
     private readonly processor: DocumentProcessor,
   ) {}
 
@@ -26,7 +28,9 @@ export class IngestWorker implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker(
       QUEUE.Ingest,
       async (job) => {
-        await this.processor.process(job.data as IngestJobV1);
+        const data = job.data as IngestJobV1;
+        // Bind the tenant so RLS scopes every query this job runs.
+        await this.database.runWithTenant(data.organizationId, () => this.processor.process(data));
       },
       {
         connection: this.connection,

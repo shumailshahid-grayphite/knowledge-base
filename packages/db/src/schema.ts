@@ -87,7 +87,7 @@ export interface MembershipsTable {
   created_at: GenTimestamp;
 }
 
-export interface KnowledgeSpacesTable {
+export interface KnowledgeBaseTable {
   id: Generated<string>;
   organization_id: string;
   name: string;
@@ -102,11 +102,14 @@ export interface KnowledgeSpacesTable {
 export interface FoldersTable {
   id: Generated<string>;
   organization_id: string;
-  space_id: string;
+  knowledge_base_id: string;
   parent_id: Nullable<string>;
   name: string;
   path: WithDefault<string>;
+  origin: WithDefault<string>;
+  source_connector_id: Nullable<string>;
   created_at: GenTimestamp;
+  updated_at: GenTimestamp;
 }
 
 export interface SourceConnectorsTable {
@@ -126,7 +129,7 @@ export interface SyncJobsTable {
   id: Generated<string>;
   organization_id: string;
   connector_id: string;
-  space_id: string;
+  knowledge_base_id: string;
   selector: JsonCol;
   status: WithDefault<SyncStatus>;
   stats: JsonCol;
@@ -140,7 +143,7 @@ export interface SyncJobsTable {
 export interface DocumentsTable {
   id: Generated<string>;
   organization_id: string;
-  space_id: string;
+  knowledge_base_id: string;
   folder_id: Nullable<string>;
   source_type: WithDefault<ConnectorType>;
   source_connector_id: Nullable<string>;
@@ -200,7 +203,7 @@ export interface ProcessingJobsTable {
 export interface ChunksTable {
   id: Generated<string>;
   organization_id: string;
-  space_id: string;
+  knowledge_base_id: string;
   document_id: string;
   version_id: string;
   chunk_index: number;
@@ -220,7 +223,7 @@ export interface ChunksTable {
 export interface QuerySessionsTable {
   id: Generated<string>;
   organization_id: string;
-  space_id: string;
+  knowledge_base_id: string;
   user_id: Nullable<string>;
   title: Nullable<string>;
   created_at: GenTimestamp;
@@ -240,7 +243,7 @@ export interface QueryMessagesTable {
 export interface RetrievalLogsTable {
   id: Generated<string>;
   organization_id: string;
-  space_id: string;
+  knowledge_base_id: string;
   user_id: Nullable<string>;
   session_id: Nullable<string>;
   source: WithDefault<string>;
@@ -282,7 +285,7 @@ export interface DB {
   organizations: OrganizationsTable;
   users: UsersTable;
   memberships: MembershipsTable;
-  knowledge_spaces: KnowledgeSpacesTable;
+  knowledge_base: KnowledgeBaseTable;
   folders: FoldersTable;
   source_connectors: SourceConnectorsTable;
   sync_jobs: SyncJobsTable;
