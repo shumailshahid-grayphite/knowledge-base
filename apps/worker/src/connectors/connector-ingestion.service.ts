@@ -17,6 +17,10 @@ import { STORAGE_PROVIDER } from '../storage/storage.tokens.js';
 import { ConnectorSecretsService } from './connector-secrets.service.js';
 import { IngestProducerService } from './ingest-producer.service.js';
 import { CONNECTOR_RESOLVER, type ConnectorResolver } from './connector-resolver.js';
+import { FolderMirrorService, segmentsFromPath } from './folder-mirror.service.js';
+
+type ResolvedFolder = { id: string; path: string } | null;
+type ExistingDoc = { id: string; external_version: string | null; content_hash: string | null; folder_id: string | null };
 
 const SUPPORTED = new Set<string>(SUPPORTED_MIME_TYPES);
 
@@ -42,6 +46,7 @@ export class ConnectorIngestionService {
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     private readonly secrets: ConnectorSecretsService,
     private readonly ingestProducer: IngestProducerService,
+    private readonly mirror: FolderMirrorService,
     @Inject(CONNECTOR_RESOLVER) private readonly resolveConnector: ConnectorResolver,
   ) {}
 
@@ -113,16 +118,29 @@ export class ConnectorIngestionService {
     file: RemoteFile,
     stats: SyncStats,
   ): Promise<void> {
-    const existing = await this.database.db
+    const existing: ExistingDoc | undefined = await this.database.db
       .selectFrom('documents')
-      .select(['id', 'external_version', 'content_hash'])
+      .select(['id', 'external_version', 'content_hash', 'folder_id'])
       .where('organization_id', '=', payload.organizationId)
       .where('source_connector_id', '=', payload.connectorId)
       .where('source_item_id', '=', file.sourceItemId)
       .executeTakeFirst();
 
-    // Fast path: unchanged per source version tag.
+    // Mirror the source folder path into the KB folder tree (creates as needed).
+    const folder: ResolvedFolder = file.folderPath
+      ? await this.mirror.resolveOrCreatePath(
+          payload.organizationId,
+          payload.spaceId,
+          segmentsFromPath(file.folderPath),
+          payload.connectorId,
+        )
+      : null;
+
+    // Fast path: content unchanged per source version tag. Still reconcile a
+    // move (folder changed) and refresh the mapping — neither needs a re-ingest.
     if (existing && file.externalVersion && existing.external_version === file.externalVersion) {
+      await this.applyFolderMove(existing, folder);
+      await this.upsertMapping(payload, file, existing.id);
       stats.skipped += 1;
       return;
     }
@@ -137,13 +155,15 @@ export class ConnectorIngestionService {
     const buf = await streamToBuffer(fetched.stream);
     const hash = createHash('sha256').update(buf).digest('hex');
 
-    // Content unchanged: just refresh the version tag so we don't re-fetch next time.
+    // Content unchanged: refresh the version tag (and any move) without re-ingesting.
     if (existing && existing.content_hash === hash) {
       await this.database.db
         .updateTable('documents')
         .set({ external_version: file.externalVersion ?? null, external_modified_at: file.modifiedAt ?? null })
         .where('id', '=', existing.id)
         .execute();
+      await this.applyFolderMove(existing, folder);
+      await this.upsertMapping(payload, file, existing.id);
       stats.skipped += 1;
       return;
     }
@@ -164,7 +184,8 @@ export class ConnectorIngestionService {
           file_name: file.name,
           mime_type: mime,
           file_size: buf.length,
-          folder_path: file.folderPath ?? null,
+          folder_id: folder?.id ?? null,
+          folder_path: folder?.path ?? file.folderPath ?? null,
           owner_meta: JSON.stringify(file.owner ?? {}),
           permissions: JSON.stringify(file.permissions ?? {}),
           external_created_at: file.createdAt ?? null,
@@ -206,6 +227,8 @@ export class ConnectorIngestionService {
         current_version_id: version.id,
         storage_key: storageKey,
         content_hash: hash,
+        folder_id: folder?.id ?? null,
+        folder_path: folder?.path ?? file.folderPath ?? null,
         external_version: file.externalVersion ?? null,
         external_modified_at: file.modifiedAt ?? null,
         status: 'queued',
@@ -238,9 +261,57 @@ export class ConnectorIngestionService {
       reprocess: !isNew,
     };
     await this.ingestProducer.enqueueIngest(ingest);
+    await this.upsertMapping(payload, file, documentId);
 
     if (isNew) stats.new += 1;
     else stats.updated += 1;
+  }
+
+  /** Reconcile a document that moved to a different folder at the source. */
+  private async applyFolderMove(doc: ExistingDoc, folder: ResolvedFolder): Promise<void> {
+    const newFolderId = folder?.id ?? null;
+    if ((doc.folder_id ?? null) === newFolderId) return;
+    await this.database.db
+      .updateTable('documents')
+      .set({ folder_id: newFolderId, folder_path: folder?.path ?? null })
+      .where('id', '=', doc.id)
+      .execute();
+  }
+
+  /** Record/refresh the remote-item -> document mapping (rename/move/delete tracking). */
+  private async upsertMapping(payload: SyncJobV1, file: RemoteFile, documentId: string): Promise<void> {
+    const existing = await this.database.db
+      .selectFrom('remote_object_mapping')
+      .select('id')
+      .where('connector_id', '=', payload.connectorId)
+      .where('remote_item_id', '=', file.sourceItemId)
+      .executeTakeFirst();
+    if (existing) {
+      await this.database.db
+        .updateTable('remote_object_mapping')
+        .set({
+          document_id: documentId,
+          remote_path: file.folderPath ?? null,
+          etag: file.externalVersion ?? null,
+          last_seen_sync_id: payload.syncJobId,
+          deleted_at: null,
+        })
+        .where('id', '=', existing.id)
+        .execute();
+    } else {
+      await this.database.db
+        .insertInto('remote_object_mapping')
+        .values({
+          organization_id: payload.organizationId,
+          connector_id: payload.connectorId,
+          remote_item_id: file.sourceItemId,
+          document_id: documentId,
+          remote_path: file.folderPath ?? null,
+          etag: file.externalVersion ?? null,
+          last_seen_sync_id: payload.syncJobId,
+        })
+        .execute();
+    }
   }
 
   private async nextVersionNo(documentId: string): Promise<number> {

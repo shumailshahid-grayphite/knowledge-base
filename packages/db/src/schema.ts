@@ -125,6 +125,20 @@ export interface SourceConnectorsTable {
   updated_at: GenTimestamp;
 }
 
+export interface RemoteObjectMappingTable {
+  id: Generated<string>;
+  organization_id: string;
+  connector_id: string;
+  remote_item_id: string;
+  document_id: Nullable<string>;
+  remote_path: Nullable<string>;
+  etag: Nullable<string>;
+  last_seen_sync_id: Nullable<string>;
+  deleted_at: NullTimestamp;
+  created_at: GenTimestamp;
+  updated_at: GenTimestamp;
+}
+
 export interface SyncJobsTable {
   id: Generated<string>;
   organization_id: string;
@@ -297,5 +311,6 @@ export interface DB {
   query_messages: QueryMessagesTable;
   retrieval_logs: RetrievalLogsTable;
   connector_secrets: ConnectorSecretsTable;
+  remote_object_mapping: RemoteObjectMappingTable;
   audit_logs: AuditLogsTable;
 }

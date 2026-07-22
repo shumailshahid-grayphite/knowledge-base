@@ -116,7 +116,9 @@ export class GoogleDriveConnector implements SourceConnector {
     const files: RemoteFile[] = [];
     const visited = new Set<string>();
 
-    const walk = async (folderId: string): Promise<void> => {
+    // `path` accumulates the folder path relative to the selected root, so the
+    // structure mirrors into KB folders. Root ('/') means the KB root.
+    const walk = async (folderId: string, path: string): Promise<void> => {
       if (visited.has(folderId)) return;
       visited.add(folderId);
       let pageToken: string | undefined;
@@ -131,17 +133,27 @@ export class GoogleDriveConnector implements SourceConnector {
         const res = await fetchJson<DriveListResponse>(`${API}/files?${params}`, this.authHeaders(ctx));
         for (const f of res.files) {
           if (f.mimeType === FOLDER_MIME) {
-            await walk(f.id); // recurse into subfolders
+            await walk(f.id, `${path}${f.name}/`); // recurse into subfolders
           } else if (DIRECT_SUPPORTED.has(f.mimeType) || f.mimeType === GDOC_MIME) {
-            files.push(this.toRemoteFile(f));
+            files.push(this.toRemoteFile(f, path === '/' ? undefined : path));
           }
         }
         pageToken = res.nextPageToken;
       } while (pageToken);
     };
 
-    for (const id of folderIds) await walk(id);
+    // Each selected folder becomes a top-level mirror root (its own name); the
+    // drive root ('root') mirrors its children directly under the KB root.
+    for (const id of folderIds) {
+      const rootPath = id === 'root' ? '/' : `/${await this.folderName(ctx, id)}/`;
+      await walk(id, rootPath);
+    }
     return { files, nextCursor: null };
+  }
+
+  private async folderName(ctx: ConnectorContext, id: string): Promise<string> {
+    const res = await fetchJson<{ name?: string }>(`${API}/files/${id}?fields=name`, this.authHeaders(ctx));
+    return res.name ?? id;
   }
 
   async fetchFile(ctx: ConnectorContext, file: RemoteFile): Promise<FetchedFile> {
@@ -153,7 +165,7 @@ export class GoogleDriveConnector implements SourceConnector {
     return { stream, mimeType: isGoogleDoc ? DOCX_MIME : file.mimeType, sizeBytes: file.sizeBytes };
   }
 
-  private toRemoteFile(f: DriveFile): RemoteFile {
+  private toRemoteFile(f: DriveFile, folderPath?: string): RemoteFile {
     // Google Docs export to .docx; reflect that in name/mime for downstream processing.
     const isGoogleDoc = f.mimeType === GDOC_MIME;
     return {
@@ -162,6 +174,7 @@ export class GoogleDriveConnector implements SourceConnector {
       mimeType: isGoogleDoc ? DOCX_MIME : f.mimeType,
       sizeBytes: f.size ? Number(f.size) : undefined,
       webUrl: f.webViewLink,
+      folderPath,
       createdAt: f.createdTime,
       modifiedAt: f.modifiedTime,
       externalVersion: f.md5Checksum ?? f.version ?? f.modifiedTime,

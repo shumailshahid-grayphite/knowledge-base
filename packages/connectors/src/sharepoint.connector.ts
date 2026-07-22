@@ -144,24 +144,33 @@ export class SharePointConnector implements SourceConnector {
     const nodes = (selector.folderIds as string[] | undefined) ?? [];
     const files: RemoteFile[] = [];
 
-    const walk = async (driveId: string, itemId: string): Promise<void> => {
+    // `path` mirrors the source folder structure into KB folders ('/' = KB root).
+    const walk = async (driveId: string, itemId: string, path: string): Promise<void> => {
       const items = await this.children(ctx, driveId, itemId);
       for (const it of items) {
         if (it.folder) {
-          await walk(driveId, it.id);
+          await walk(driveId, it.id, `${path}${it.name}/`);
         } else {
           const mime = resolveMime(it);
-          if (mime) files.push(this.toRemoteFile(driveId, it, mime));
+          if (mime) files.push(this.toRemoteFile(driveId, it, mime, path === '/' ? undefined : path));
         }
       }
     };
 
     for (const n of nodes) {
       const [kind, a, b] = n.split(':');
-      if (kind === 'drive') await walk(a!, 'root');
-      else if (kind === 'item') await walk(a!, b!);
+      if (kind === 'drive') await walk(a!, 'root', '/');
+      else if (kind === 'item') await walk(a!, b!, `/${await this.itemName(ctx, a!, b!)}/`);
     }
     return { files, nextCursor: null };
+  }
+
+  private async itemName(ctx: ConnectorContext, driveId: string, itemId: string): Promise<string> {
+    const it = await fetchJson<{ name?: string }>(
+      `${GRAPH}/drives/${driveId}/items/${itemId}?$select=name`,
+      this.headers(ctx),
+    );
+    return it.name ?? itemId;
   }
 
   async fetchFile(ctx: ConnectorContext, file: RemoteFile): Promise<FetchedFile> {
@@ -182,13 +191,14 @@ export class SharePointConnector implements SourceConnector {
     return out;
   }
 
-  private toRemoteFile(driveId: string, it: DriveItem, mime: string): RemoteFile {
+  private toRemoteFile(driveId: string, it: DriveItem, mime: string, folderPath?: string): RemoteFile {
     return {
       sourceItemId: `${driveId}:${it.id}`,
       name: it.name,
       mimeType: mime,
       sizeBytes: it.size,
       webUrl: it.webUrl,
+      folderPath,
       createdAt: it.createdDateTime,
       modifiedAt: it.lastModifiedDateTime,
       externalVersion: it.cTag ?? it.eTag,
