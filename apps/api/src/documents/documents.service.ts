@@ -225,6 +225,8 @@ export class DocumentsService {
     }
     if (query.folderId) {
       q = q.where('folder_id', '=', query.folderId);
+    } else if (query.unfiled) {
+      q = q.where('folder_id', 'is', null);
     }
     const rows = await q
       .orderBy('created_at', 'desc')

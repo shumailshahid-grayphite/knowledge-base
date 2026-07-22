@@ -31,6 +31,8 @@ export const ListDocumentsQuery = z.object({
     .optional(),
   /** Restrict to documents directly in this folder (exact match, not subtree). */
   folderId: z.string().uuid().optional(),
+  /** Only documents not in any folder (the KB "root"). Ignored if folderId is set. */
+  unfiled: z.coerce.boolean().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });

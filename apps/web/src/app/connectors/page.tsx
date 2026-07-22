@@ -3,10 +3,9 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import useSWR from 'swr';
-import type { SpaceResponse } from '@kb/shared';
+import { Cloud, Plug } from 'lucide-react';
 import { apiFetch, fetcher } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useDefaultSpace } from '@/lib/kb';
 import { Badge } from '@/components/ui/badge';
 import { formatDate } from '@/lib/utils';
 
@@ -23,25 +22,19 @@ const PROVIDERS = [
   { type: 'sharepoint', label: 'SharePoint' },
 ];
 
-export default function ConnectorsPage() {
-  const { data: spaces } = useSWR<SpaceResponse[]>('/spaces', fetcher);
-  const { data: connectors } = useSWR<ConnectorRow[]>('/connectors', fetcher);
-  const [spaceId, setSpaceId] = useState('');
-  const [error, setError] = useState<string | null>(null);
+const typeLabel = (t: string) => PROVIDERS.find((p) => p.type === t)?.label ?? t;
 
-  const targetSpace = spaceId || spaces?.[0]?.id || '';
+export default function ConnectorsPage() {
+  const { spaceId } = useDefaultSpace();
+  const { data: connectors } = useSWR<ConnectorRow[]>('/connectors', fetcher);
+  const [error, setError] = useState<string | null>(null);
 
   async function connect(type: string) {
     setError(null);
-    if (!targetSpace) {
-      setError('Create a knowledge space first.');
-      return;
-    }
+    if (!spaceId) return;
     try {
-      const { url } = await apiFetch<{ url: string }>(
-        `/connectors/${type}/auth-url?spaceId=${targetSpace}`,
-      );
-      window.location.href = url; // redirect to provider consent
+      const { url } = await apiFetch<{ url: string }>(`/connectors/${type}/auth-url?spaceId=${spaceId}`);
+      window.location.href = url;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to start OAuth');
     }
@@ -49,63 +42,69 @@ export default function ConnectorsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Connect Sources</h1>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Add a connection</CardTitle>
-          <CardDescription>Synced files are ingested into the selected knowledge space.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-muted-foreground">Target space</label>
-            <select
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-              value={targetSpace}
-              onChange={(e) => setSpaceId(e.target.value)}
-            >
-              {spaces?.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex gap-2">
-            {PROVIDERS.map((p) => (
-              <Button key={p.type} variant="outline" onClick={() => connect(p.type)}>
-                Connect {p.label}
-              </Button>
-            ))}
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <p className="text-xs text-muted-foreground">
-            Requires OAuth app credentials configured on the API (Google / Azure).
-          </p>
-        </CardContent>
-      </Card>
-
-      <div className="space-y-3">
-        <h2 className="text-lg font-semibold">Connections</h2>
-        {connectors && connectors.length === 0 && (
-          <p className="text-muted-foreground">No connections yet.</p>
-        )}
-        {connectors?.map((c) => (
-          <Link key={c.id} href={`/connectors/${c.id}`}>
-            <Card className="transition-colors hover:bg-accent/40">
-              <CardHeader className="flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-base">{c.name}</CardTitle>
-                  <CardDescription>
-                    {c.type} · connected {formatDate(c.createdAt)}
-                  </CardDescription>
-                </div>
-                <Badge variant={c.status === 'active' ? 'success' : 'secondary'}>{c.status}</Badge>
-              </CardHeader>
-            </Card>
-          </Link>
-        ))}
+      <div>
+        <h1 className="text-xl font-semibold">Connected sources</h1>
+        <p className="text-sm text-muted-foreground">
+          Connect Google Drive or SharePoint to mirror their folders into your knowledge base.
+        </p>
       </div>
+
+      {/* Add a source */}
+      <section>
+        <h2 className="mb-2 text-sm font-medium">Add a source</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {PROVIDERS.map((p) => (
+            <button
+              key={p.type}
+              onClick={() => connect(p.type)}
+              className="group flex items-center gap-3 rounded-lg border bg-background px-4 py-3 text-left transition hover:bg-accent/40 hover:shadow-sm"
+            >
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-muted">
+                <Cloud className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium">{p.label}</div>
+                <div className="text-xs text-muted-foreground">Connect &amp; sync folders</div>
+              </div>
+            </button>
+          ))}
+        </div>
+        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+        <p className="mt-2 text-xs text-muted-foreground">
+          Requires OAuth app credentials configured on the API (Google / Azure).
+        </p>
+      </section>
+
+      {/* Your connections */}
+      <section>
+        <h2 className="mb-2 text-sm font-medium">Your connections</h2>
+        {connectors && connectors.length === 0 && (
+          <div className="grid h-32 place-items-center rounded-xl border border-dashed text-center text-sm text-muted-foreground">
+            <div className="flex flex-col items-center gap-2">
+              <Plug className="h-6 w-6" />
+              No sources connected yet.
+            </div>
+          </div>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {connectors?.map((c) => (
+            <Link
+              key={c.id}
+              href={`/connectors/${c.id}`}
+              className="group flex items-center gap-3 rounded-lg bg-muted/50 px-4 py-3 hover:bg-muted"
+            >
+              <Cloud className="h-5 w-5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">{c.name}</div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {typeLabel(c.type)} · connected {formatDate(c.createdAt)}
+                </div>
+              </div>
+              <Badge variant={c.status === 'active' ? 'success' : 'secondary'}>{c.status}</Badge>
+            </Link>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

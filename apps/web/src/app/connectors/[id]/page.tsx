@@ -1,12 +1,12 @@
 'use client';
 
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import useSWR, { mutate } from 'swr';
+import { ChevronRight, Cloud, Folder } from 'lucide-react';
 import type { RemoteNode } from '@kb/shared';
 import { apiFetch, fetcher } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { formatDate } from '@/lib/utils';
 
@@ -24,11 +24,12 @@ interface SyncRow {
 }
 
 const ACTIVE = new Set(['queued', 'running']);
+const isContainer = (t: string) => t === 'folder' || t === 'site' || t === 'drive';
 
 export default function ConnectorDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [path, setPath] = useState<Crumb[]>([{ name: 'Sources' }]);
-  const [selected, setSelected] = useState<Record<string, string>>({}); // id -> name
+  const [path, setPath] = useState<Crumb[]>([{ name: 'Root' }]);
+  const [selected, setSelected] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<string | null>(null);
 
   const current = path[path.length - 1]!;
@@ -40,12 +41,8 @@ export default function ConnectorDetailPage() {
     refreshInterval: (rows) => (rows?.some((r) => ACTIVE.has(r.status)) ? 3000 : 0),
   });
 
-  function drillInto(node: RemoteNode) {
-    setPath((p) => [...p, { id: node.id, name: node.name }]);
-  }
-  function goto(index: number) {
-    setPath((p) => p.slice(0, index + 1));
-  }
+  const drillInto = (node: RemoteNode) => setPath((p) => [...p, { id: node.id, name: node.name }]);
+  const goto = (index: number) => setPath((p) => p.slice(0, index + 1));
   function toggle(node: RemoteNode) {
     setSelected((s) => {
       const next = { ...s };
@@ -72,73 +69,93 @@ export default function ConnectorDetailPage() {
     }
   }
 
+  const count = Object.keys(selected).length;
+
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Connection</h1>
+    <div className="space-y-5">
+      {/* Header / breadcrumb back to sources */}
+      <div className="flex items-center gap-1 text-xl">
+        <Link href="/connectors" className="font-semibold text-muted-foreground hover:underline">
+          Connected sources
+        </Link>
+        <ChevronRight className="h-5 w-5 text-muted-foreground" />
+        <span className="font-semibold">Choose folders to sync</span>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Choose folders to sync</CardTitle>
-          <CardDescription>Browse into folders and select the ones to ingest.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap items-center gap-1 text-sm">
-            {path.map((c, i) => (
-              <span key={i} className="flex items-center gap-1">
-                {i > 0 && <span className="text-muted-foreground">/</span>}
-                <button className="hover:underline" onClick={() => goto(i)}>
-                  {c.name}
-                </button>
-              </span>
-            ))}
-          </div>
+      <section>
+        {/* Remote path breadcrumb */}
+        <div className="mb-2 flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
+          {path.map((c, i) => (
+            <span key={i} className="flex items-center gap-1">
+              {i > 0 && <ChevronRight className="h-3.5 w-3.5" />}
+              <button className="hover:underline" onClick={() => goto(i)}>
+                {c.name}
+              </button>
+            </span>
+          ))}
+        </div>
 
-          {browseError && (
-            <p className="text-sm text-destructive">
-              Could not browse (OAuth credentials required): {String((browseError as Error).message)}
-            </p>
-          )}
-          {isLoading && <p className="text-muted-foreground">Loading…</p>}
-          {nodes && nodes.length === 0 && <p className="text-muted-foreground">No folders here.</p>}
+        {browseError && (
+          <p className="mb-2 text-sm text-destructive">
+            Could not browse (OAuth credentials required): {String((browseError as Error).message)}
+          </p>
+        )}
 
-          <div className="divide-y">
-            {nodes?.map((n) => (
-              <div key={n.id} className="flex items-center justify-between py-2">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={!!selected[n.id]} onChange={() => toggle(n)} />
-                  <span className="font-medium">{n.name}</span>
-                  <Badge variant="outline">{n.type}</Badge>
-                </label>
-                {(n.type === 'folder' || n.type === 'site' || n.type === 'drive') && (
-                  <Button variant="ghost" size="sm" onClick={() => drillInto(n)}>
-                    Open
-                  </Button>
+        <div className="overflow-hidden rounded-xl border">
+          {isLoading && <p className="px-4 py-3 text-sm text-muted-foreground">Loading…</p>}
+          {nodes && nodes.length === 0 && <p className="px-4 py-3 text-sm text-muted-foreground">No items here.</p>}
+          {nodes?.map((n) => (
+            <div key={n.id} className="group flex items-center justify-between gap-2 border-b px-4 py-2.5 last:border-0 hover:bg-accent/40">
+              <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={!!selected[n.id]}
+                  onChange={() => toggle(n)}
+                  className="h-4 w-4 accent-[hsl(var(--primary))]"
+                />
+                {isContainer(n.type) ? (
+                  <Folder className="h-5 w-5 shrink-0 fill-muted-foreground/30 text-muted-foreground" />
+                ) : (
+                  <Cloud className="h-5 w-5 shrink-0 text-muted-foreground" />
                 )}
-              </div>
-            ))}
-          </div>
+                <span className="truncate text-sm">{n.name}</span>
+                <Badge variant="outline" className="shrink-0">{n.type}</Badge>
+              </label>
+              {isContainer(n.type) && (
+                <button
+                  onClick={() => drillInto(n)}
+                  className="rounded-full px-3 py-1 text-sm text-muted-foreground opacity-0 transition hover:bg-accent group-hover:opacity-100"
+                >
+                  Open
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
 
-          <div className="flex items-center gap-3">
-            <Button onClick={syncSelected} disabled={Object.keys(selected).length === 0}>
-              Sync {Object.keys(selected).length || ''} selected
-            </Button>
-            {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
-          </div>
-        </CardContent>
-      </Card>
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            onClick={syncSelected}
+            disabled={count === 0}
+            className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-40"
+          >
+            Sync {count || ''} selected
+          </button>
+          {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
+        </div>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Sync history</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {history && history.length === 0 && <p className="text-muted-foreground">No syncs yet.</p>}
-          <div className="divide-y">
-            {history?.map((h) => (
-              <div key={h.id} className="flex items-center justify-between py-2 text-sm">
-                <div>
+      {/* Sync history */}
+      <section>
+        <h2 className="mb-2 text-sm font-medium">Sync history</h2>
+        {history && history.length === 0 && <p className="text-sm text-muted-foreground">No syncs yet.</p>}
+        {history && history.length > 0 && (
+          <div className="overflow-hidden rounded-xl border">
+            {history.map((h) => (
+              <div key={h.id} className="flex items-center justify-between gap-2 border-b px-4 py-2.5 text-sm last:border-0">
+                <div className="min-w-0">
                   <div className="font-medium">{formatDate(h.createdAt)}</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="truncate text-xs text-muted-foreground">
                     {h.stats
                       ? `found ${h.stats.found ?? 0} · new ${h.stats.new ?? 0} · updated ${h.stats.updated ?? 0} · skipped ${h.stats.skipped ?? 0} · failed ${h.stats.failed ?? 0}`
                       : ''}
@@ -151,8 +168,8 @@ export default function ConnectorDetailPage() {
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        )}
+      </section>
     </div>
   );
 }

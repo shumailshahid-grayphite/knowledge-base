@@ -2,7 +2,39 @@
 
 import useSWR from 'swr';
 import type { FolderResponse, SpaceResponse } from '@kb/shared';
-import { fetcher } from '@/lib/api';
+import { API_BASE, fetcher, getToken } from '@/lib/api';
+
+/** SWR keys shared between the sidebar "New" actions and the browser view. */
+export const foldersKey = (spaceId: string) => `/spaces/${spaceId}/folders`;
+export const docsKey = (spaceId: string, folderId: string | null) =>
+  `/spaces/${spaceId}/documents?${folderId ? `folderId=${folderId}` : 'unfiled=true'}`;
+
+/** Multipart upload of one or more files into a folder (null = KB root). */
+export async function uploadDocuments(
+  spaceId: string,
+  folderId: string | null,
+  files: FileList | File[],
+): Promise<void> {
+  for (const file of Array.from(files)) {
+    const form = new FormData();
+    form.append('file', file);
+    if (folderId) form.append('folderId', folderId);
+    const res = await fetch(`${API_BASE}/spaces/${spaceId}/documents`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${getToken() ?? ''}` },
+      body: form,
+    });
+    if (!res.ok) {
+      throw new Error((await res.json().catch(() => ({}))).message ?? `Upload failed (${res.status})`);
+    }
+  }
+}
+
+/** Parse the folder id from a /folders/[id] path (null at KB root). */
+export function folderIdFromPath(pathname: string): string | null {
+  const m = pathname.match(/^\/folders\/([^/]+)/);
+  return m?.[1] ?? null;
+}
 
 /**
  * The single implicit "Company Knowledge Base" for the org. The UI navigates by
