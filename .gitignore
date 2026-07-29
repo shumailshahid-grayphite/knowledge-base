@@ -16,6 +16,10 @@ coverage/
 # pgvector extension source (cloned locally to build against postgresql@14; not project code)
 pgvector/
 
+# tesseract.js OCR language data (downloaded/cached at runtime)
+*.traineddata
+*.traineddata.gz
+
 # logs
 *.log
 npm-debug.log*

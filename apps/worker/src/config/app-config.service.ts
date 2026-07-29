@@ -12,6 +12,12 @@ const EnvSchema = z.object({
   STORAGE_LOCAL_DIR: z.string().default('./.data/storage'),
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(4),
   EMBEDDING_BATCH_SIZE: z.coerce.number().int().positive().default(96),
+  // OCR fallback for image-only (scanned) PDF pages with no selectable text.
+  OCR_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  OCR_LANG: z.string().default('eng'),
   // Required only when connector sync is used (decrypting stored OAuth tokens).
   CONNECTOR_ENCRYPTION_KEY: z.string().optional(),
 });

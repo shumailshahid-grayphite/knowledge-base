@@ -5,15 +5,18 @@ import type {
   ExtractionResult,
   TextExtractor,
 } from './text-extractor.interface.js';
+import { OcrService } from './ocr.service.js';
 
 /**
  * Default extractor: pdfjs-dist for per-page PDF text (real page-number
- * citations), mammoth for DOCX, native decode for TXT/Markdown. pdfjs/mammoth
- * are confined to this file.
+ * citations), mammoth for DOCX, native decode for TXT/Markdown. Pages with no
+ * selectable text (scanned) fall back to OCR. pdfjs/mammoth are confined here.
  */
 @Injectable()
 export class DefaultTextExtractor implements TextExtractor {
   private readonly logger = new Logger(DefaultTextExtractor.name);
+
+  constructor(private readonly ocr: OcrService) {}
 
   async extract(buffer: Buffer, mimeType: string, fileName: string): Promise<ExtractionResult> {
     if (mimeType === 'application/pdf') {
@@ -54,14 +57,23 @@ export class DefaultTextExtractor implements TextExtractor {
     }
 
     const pages: ExtractedPage[] = [];
+    let ocrPages = 0;
     for (let p = 1; p <= doc.numPages; p++) {
       try {
         const page = await doc.getPage(p);
         const content = await page.getTextContent();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const text = content.items
+        let text = content.items
           .map((it: any) => (typeof it.str === 'string' ? it.str : ''))
           .join(' ');
+        // Scanned page (no text layer) -> OCR (MuPDF renders the page, tesseract reads it).
+        if (!text.trim() && this.ocr.enabled) {
+          const ocrText = await this.ocr.ocrPdfPage(buffer, p - 1);
+          if (ocrText.trim()) {
+            text = ocrText;
+            ocrPages += 1;
+          }
+        }
         pages.push({ pageNumber: p, text });
         if (typeof page.cleanup === 'function') page.cleanup();
       } catch (err) {
@@ -72,8 +84,11 @@ export class DefaultTextExtractor implements TextExtractor {
     }
     if (typeof doc.destroy === 'function') await doc.destroy();
 
+    if (ocrPages > 0) {
+      this.logger.log(`OCR recovered text for ${ocrPages} scanned page(s) in ${fileName}`);
+    }
     if (pages.every((pg) => !pg.text.trim())) {
-      warnings.push('no selectable text found (document may be scanned; OCR is Phase 3)');
+      warnings.push('no selectable text found (scanned document and OCR produced nothing)');
     }
     this.logger.debug(`extracted ${pages.length} page(s) from ${fileName}`);
     return this.buildResult(pages, metadata, warnings);
