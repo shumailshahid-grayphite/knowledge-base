@@ -157,7 +157,9 @@ export class GoogleDriveConnector implements SourceConnector {
   }
 
   async fetchFile(ctx: ConnectorContext, file: RemoteFile): Promise<FetchedFile> {
-    const isGoogleDoc = file.mimeType === GDOC_MIME;
+    // Native Google Docs must be EXPORTed (alt=media 403s on them). We detect via
+    // the source MIME because file.mimeType has already been rewritten to DOCX.
+    const isGoogleDoc = file.sourceMimeType === GDOC_MIME;
     const url = isGoogleDoc
       ? `${API}/files/${file.sourceItemId}/export?mimeType=${encodeURIComponent(DOCX_MIME)}`
       : `${API}/files/${file.sourceItemId}?alt=media`;
@@ -172,6 +174,7 @@ export class GoogleDriveConnector implements SourceConnector {
       sourceItemId: f.id,
       name: isGoogleDoc ? `${f.name}.docx` : f.name,
       mimeType: isGoogleDoc ? DOCX_MIME : f.mimeType,
+      sourceMimeType: f.mimeType,
       sizeBytes: f.size ? Number(f.size) : undefined,
       webUrl: f.webViewLink,
       folderPath,

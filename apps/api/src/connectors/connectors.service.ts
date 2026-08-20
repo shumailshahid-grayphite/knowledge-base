@@ -77,22 +77,28 @@ export class ConnectorsService {
     const connector = getConnector(type, process.env);
     const credentials = await connector.handleCallback({ code, redirectUri: this.redirectUri(type) });
 
-    const row = await this.database.db
-      .insertInto('source_connectors')
-      .values({
-        organization_id: payload.orgId,
-        type,
-        name: payload.name ?? `${type} connection`,
-        status: 'active',
-        config: JSON.stringify({ spaceId: payload.spaceId ?? null }),
-        created_by: payload.userId,
-      })
-      .returning(['id'])
-      .executeTakeFirstOrThrow();
+    // The OAuth callback is unauthenticated (Google's redirect), so no tenant is
+    // bound by the interceptor. Set it from the verified state so RLS-protected
+    // writes (source_connectors, connector_secrets) pass their WITH CHECK.
+    const connectorId = await this.database.runWithTenant(payload.orgId, async () => {
+      const row = await this.database.db
+        .insertInto('source_connectors')
+        .values({
+          organization_id: payload.orgId,
+          type,
+          name: payload.name ?? `${type} connection`,
+          status: 'active',
+          config: JSON.stringify({ spaceId: payload.spaceId ?? null }),
+          created_by: payload.userId,
+        })
+        .returning(['id'])
+        .executeTakeFirstOrThrow();
+      await this.secrets.store(row.id, payload.orgId, credentials);
+      return row.id;
+    });
 
-    await this.secrets.store(row.id, payload.orgId, credentials);
-    this.logger.log({ connectorId: row.id, type }, 'connector connected');
-    return `${this.config.env.WEB_PUBLIC_URL}/connectors/${row.id}`;
+    this.logger.log({ connectorId, type }, 'connector connected');
+    return `${this.config.env.WEB_PUBLIC_URL}/connectors/${connectorId}`;
   }
 
   async list(user: AuthUser) {

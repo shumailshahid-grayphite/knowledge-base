@@ -33,7 +33,10 @@ export interface RemoteNode {
 export interface RemoteFile {
   sourceItemId: string;
   name: string;
+  /** MIME the file will be ingested as (e.g. Google Docs are exported to DOCX). */
   mimeType: string;
+  /** Provider's native MIME at the source; lets fetchFile choose download vs export. */
+  sourceMimeType?: string;
   sizeBytes?: number;
   webUrl?: string;
   folderPath?: string;
