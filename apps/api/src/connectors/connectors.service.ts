@@ -81,20 +81,41 @@ export class ConnectorsService {
     // bound by the interceptor. Set it from the verified state so RLS-protected
     // writes (source_connectors, connector_secrets) pass their WITH CHECK.
     const connectorId = await this.database.runWithTenant(payload.orgId, async () => {
-      const row = await this.database.db
-        .insertInto('source_connectors')
-        .values({
-          organization_id: payload.orgId,
-          type,
-          name: payload.name ?? `${type} connection`,
-          status: 'active',
-          config: JSON.stringify({ spaceId: payload.spaceId ?? null }),
-          created_by: payload.userId,
-        })
-        .returning(['id'])
-        .executeTakeFirstOrThrow();
-      await this.secrets.store(row.id, payload.orgId, credentials);
-      return row.id;
+      // One connection per provider per org: reconnecting refreshes the existing
+      // one instead of creating a duplicate.
+      const existing = await this.database.db
+        .selectFrom('source_connectors')
+        .select('id')
+        .where('organization_id', '=', payload.orgId)
+        .where('type', '=', type)
+        .orderBy('created_at', 'asc')
+        .executeTakeFirst();
+
+      let id: string;
+      if (existing) {
+        await this.database.db
+          .updateTable('source_connectors')
+          .set({ status: 'active', config: JSON.stringify({ spaceId: payload.spaceId ?? null }) })
+          .where('id', '=', existing.id)
+          .execute();
+        id = existing.id;
+      } else {
+        const row = await this.database.db
+          .insertInto('source_connectors')
+          .values({
+            organization_id: payload.orgId,
+            type,
+            name: payload.name ?? `${type} connection`,
+            status: 'active',
+            config: JSON.stringify({ spaceId: payload.spaceId ?? null }),
+            created_by: payload.userId,
+          })
+          .returning(['id'])
+          .executeTakeFirstOrThrow();
+        id = row.id;
+      }
+      await this.secrets.store(id, payload.orgId, credentials); // upsert: reconnect refreshes token
+      return id;
     });
 
     this.logger.log({ connectorId, type }, 'connector connected');

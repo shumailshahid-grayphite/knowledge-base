@@ -29,6 +29,8 @@ export default function ConnectorsPage() {
   const { data: connectors } = useSWR<ConnectorRow[]>('/connectors', fetcher);
   const [error, setError] = useState<string | null>(null);
 
+  const connectedTypes = new Set(connectors?.map((c) => c.type));
+
   async function connect(type: string) {
     setError(null);
     if (!spaceId) return;
@@ -53,21 +55,27 @@ export default function ConnectorsPage() {
       <section>
         <h2 className="mb-2 text-sm font-medium">Add a source</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {PROVIDERS.map((p) => (
-            <button
-              key={p.type}
-              onClick={() => connect(p.type)}
-              className="group flex items-center gap-3 rounded-lg border bg-background px-4 py-3 text-left transition hover:bg-accent/40 hover:shadow-sm"
-            >
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-muted">
-                <Cloud className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm font-medium">{p.label}</div>
-                <div className="text-xs text-muted-foreground">Connect &amp; sync folders</div>
-              </div>
-            </button>
-          ))}
+          {PROVIDERS.map((p) => {
+            const connected = connectedTypes.has(p.type);
+            return (
+              <button
+                key={p.type}
+                onClick={() => connect(p.type)}
+                className="group flex items-center gap-3 rounded-lg border bg-background px-4 py-3 text-left transition hover:bg-accent/40 hover:shadow-sm"
+              >
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-muted">
+                  <Cloud className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">{p.label}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {connected ? 'Connected · click to reconnect' : 'Connect & sync folders'}
+                  </div>
+                </div>
+                {connected && <Badge variant="success" className="shrink-0">Connected</Badge>}
+              </button>
+            );
+          })}
         </div>
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
         <p className="mt-2 text-xs text-muted-foreground">
