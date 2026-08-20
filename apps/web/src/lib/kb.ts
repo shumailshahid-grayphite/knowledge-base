@@ -53,6 +53,21 @@ export function useFolders(spaceId: string | undefined) {
   return { folders: data, error, isLoading };
 }
 
+export interface ChatSummary {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** SWR key for the chat list — shared by the sidebar and the chat view. */
+export const chatsKey = (spaceId: string) => `/spaces/${spaceId}/chats`;
+
+export function useChats(spaceId: string | undefined) {
+  const { data } = useSWR<ChatSummary[]>(spaceId ? chatsKey(spaceId) : null, fetcher);
+  return { chats: data };
+}
+
 /** Build the ancestor chain (root → folder) from the flat folder list. */
 export function folderTrail(folders: FolderResponse[], folderId: string): FolderResponse[] {
   const byId = new Map(folders.map((f) => [f.id, f]));

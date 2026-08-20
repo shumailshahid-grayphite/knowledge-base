@@ -20,6 +20,7 @@ import { useAuth } from '@/lib/auth';
 import { apiFetch, ApiError } from '@/lib/api';
 import {
   useDefaultSpace,
+  useChats,
   uploadDocuments,
   foldersKey,
   docsKey,
@@ -38,8 +39,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { user, loading, logout } = useAuth();
   const { spaceId } = useDefaultSpace();
+  const { chats } = useChats(spaceId);
 
   const isLogin = pathname === '/login';
+  const onChat = pathname === '/ask' || pathname.startsWith('/ask/');
   const folderId = folderIdFromPath(pathname);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -155,6 +158,41 @@ export function AppShell({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
+
+        {/* Chats */}
+        <div className="mt-5 flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center justify-between px-3 pb-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Chats</span>
+            <Link
+              href="/ask"
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-primary hover:bg-accent"
+              title="New chat"
+            >
+              <Plus className="h-3.5 w-3.5" /> New
+            </Link>
+          </div>
+          <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+            {chats && chats.length > 0 ? (
+              chats.map((c) => (
+                <Link
+                  key={c.id}
+                  href={`/ask/${c.id}`}
+                  className={cn(
+                    'block truncate rounded-md px-3 py-1.5 text-sm transition-colors',
+                    pathname === `/ask/${c.id}`
+                      ? 'bg-accent font-medium'
+                      : 'text-foreground/70 hover:bg-accent',
+                  )}
+                  title={c.title ?? 'New chat'}
+                >
+                  {c.title || 'New chat'}
+                </Link>
+              ))
+            ) : (
+              <p className="px-3 py-1 text-xs text-muted-foreground">No chats yet</p>
+            )}
+          </div>
+        </div>
       </aside>
 
       {/* Main */}
@@ -205,13 +243,18 @@ export function AppShell({ children }: { children: ReactNode }) {
             )}
           </div>
         </header>
-        <main className="flex-1 overflow-auto">
-          <div className="mx-auto max-w-6xl p-6">
-            {err && <p className="mb-3 text-sm text-destructive">{err}</p>}
-            {children}
-          </div>
+        {/* Chat routes manage their own full-height scroll; other pages get a padded, scrollable canvas. */}
+        <main className={cn('flex-1', onChat ? 'overflow-hidden' : 'overflow-auto')}>
+          {onChat ? children : <div className="mx-auto max-w-6xl p-6">{children}</div>}
         </main>
       </div>
+
+      {/* Shell-level errors (from the New menu) as a toast so they work on any layout. */}
+      {err && (
+        <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-lg">
+          {err}
+        </div>
+      )}
 
       {/* Hidden upload input (sidebar New → File upload) */}
       <input

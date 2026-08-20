@@ -4,11 +4,11 @@ import { LLM_PROVIDER } from '../providers/providers.tokens.js';
 import type { RetrievedChunk } from './retrieval.service.js';
 
 const SYSTEM_PROMPT = [
-  'You are a knowledge base assistant for a company.',
-  'Answer the question using ONLY the provided context blocks.',
-  'Cite the sources you use inline with bracketed numbers like [1], [2] that map to the context blocks.',
-  'If the answer is not contained in the context, say you could not find it in the knowledge base.',
-  'Do NOT use outside knowledge. Do NOT invent citations or facts.',
+  "You are an assistant for a company's knowledge base.",
+  'When the provided context blocks are relevant, base your answer on them and cite inline with [1], [2] mapping to the blocks.',
+  'You may reason over the context: summarize, compare, rate/critique a document against others, and identify gaps, risks, or loopholes — grounded in what the documents say, citing the blocks that support each factual claim.',
+  'If the context does not cover the question, you may still answer from your general knowledge, but clearly state that this part is general information not drawn from the company documents (it will have no citation).',
+  'Never fabricate citations or attribute invented facts to the documents. Keep a clear line between what the documents say (cited) and your own analysis or general knowledge (uncited).',
 ].join(' ');
 
 export interface GeneratedAnswer {
@@ -18,36 +18,52 @@ export interface GeneratedAnswer {
   usage?: LlmTokenUsage;
 }
 
+/** A prior conversation turn, passed so follow-up questions have context. */
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 /** Grounded answer generation + citation formatting. Provider-agnostic. */
 @Injectable()
 export class AnswerService {
   constructor(@Inject(LLM_PROVIDER) private readonly llm: LlmProvider) {}
 
-  async generate(question: string, chunks: RetrievedChunk[]): Promise<GeneratedAnswer> {
-    const context = chunks
-      .map((c, i) => {
-        const loc = c.pageNumber ? `, page ${c.pageNumber}` : '';
-        return `[${i + 1}] (Document: "${c.documentName}"${loc}):\n${c.content}`;
-      })
-      .join('\n\n');
+  async generate(
+    question: string,
+    chunks: RetrievedChunk[],
+    history: ChatTurn[] = [],
+  ): Promise<GeneratedAnswer> {
+    const context =
+      chunks.length > 0
+        ? chunks
+            .map((c, i) => {
+              const loc = c.pageNumber ? `, page ${c.pageNumber}` : '';
+              return `[${i + 1}] (Document: "${c.documentName}"${loc}):\n${c.content}`;
+            })
+            .join('\n\n')
+        : '(No relevant company documents were found for this question.)';
 
     const result = await this.llm.complete({
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
+        // Prior turns give the model conversational context (e.g. "what about seniors?").
+        ...history.map((h) => ({ role: h.role, content: h.content })),
         {
           role: 'user',
           content:
             `Question: ${question}\n\nContext:\n${context}\n\n` +
-            'Answer using ONLY the context above and cite sources inline as [n]. ' +
-            'If the answer is not present, say you could not find it in the knowledge base.',
+            'Cite documents you use inline as [n]. Use the prior conversation only to interpret the question. ' +
+            'If the context does not answer it, answer from general knowledge and note that it is not from the company documents.',
         },
       ],
-      temperature: 0.1,
+      temperature: 0.2,
     });
 
-    // Citations are built only from the REAL retrieved chunks (never invented).
+    // Citations are ONLY the chunks the answer actually referenced (empty for a
+    // general-knowledge answer). Never invented.
     const referenced = extractReferencedIndexes(result.text, chunks.length);
-    const chosen = referenced.length > 0 ? referenced.map((n) => chunks[n - 1]!) : chunks;
+    const chosen = referenced.map((n) => chunks[n - 1]!);
     const citations: Citation[] = chosen.map((c) => ({
       chunkId: c.chunkId,
       documentId: c.documentId,

@@ -26,4 +26,23 @@ export class QueryController {
   ) {
     return this.query.recentLogs(user, spaceId);
   }
+
+  /** List chat sessions (for the sidebar). */
+  @Get('chats')
+  chats(
+    @CurrentUser() user: AuthUser,
+    @Param('spaceId', new ParseUUIDPipe()) spaceId: string,
+  ) {
+    return this.query.listChats(user, spaceId);
+  }
+
+  /** Load one chat's full message history. */
+  @Get('chats/:sessionId')
+  chat(
+    @CurrentUser() user: AuthUser,
+    @Param('spaceId', new ParseUUIDPipe()) spaceId: string,
+    @Param('sessionId', new ParseUUIDPipe()) sessionId: string,
+  ) {
+    return this.query.getChat(user, spaceId, sessionId);
+  }
 }
