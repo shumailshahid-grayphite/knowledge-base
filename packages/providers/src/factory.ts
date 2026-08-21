@@ -5,6 +5,7 @@ import { FakeEmbeddingProvider } from './embedding/fake.js';
 import { OpenAiLlmProvider } from './llm/openai.js';
 import { FakeLlmProvider } from './llm/fake.js';
 import { HeuristicReranker } from './reranker/heuristic.js';
+import { LlmReranker } from './reranker/llm.js';
 
 /**
  * Factories are the ONLY place provider selection happens. Consumers (worker,
@@ -24,7 +25,8 @@ export function createLlmProvider(cfg: ProviderConfig): LlmProvider {
   return cfg.mode === 'openai' ? new OpenAiLlmProvider(cfg) : new FakeLlmProvider();
 }
 
-export function createReranker(_cfg: ProviderConfig): Reranker {
-  // Only the deterministic heuristic ships today; branch here for future providers.
-  return new HeuristicReranker();
+export function createReranker(cfg: ProviderConfig): Reranker {
+  // LLM reranker when a real model is available (big precision win); deterministic
+  // heuristic otherwise (fake/dev, and as the LLM reranker's own fallback).
+  return cfg.rerankMode === 'llm' ? new LlmReranker(createLlmProvider(cfg)) : new HeuristicReranker();
 }

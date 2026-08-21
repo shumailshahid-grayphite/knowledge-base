@@ -33,10 +33,17 @@ export class QueryService {
     // Prior turns of this conversation (for follow-up questions).
     const history = req.sessionId ? await this.loadHistory(user, spaceId, req.sessionId) : [];
 
+    // For follow-ups, retrieve on a standalone rewrite ("what about seniors?" ->
+    // the actual subject) while the answer still uses the user's real question.
+    const searchQuery = await this.answer.condenseQuery(req.question, history);
+    if (searchQuery !== req.question) {
+      this.logger.debug({ original: req.question, searchQuery }, 'rewrote follow-up for retrieval');
+    }
+
     const chunks = await this.retrieval.retrieve({
       organizationId: user.organizationId,
       spaceId,
-      question: req.question,
+      question: searchQuery,
       topK: req.topK,
       filters,
     });

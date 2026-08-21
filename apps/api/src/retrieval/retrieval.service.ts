@@ -168,7 +168,12 @@ export class RetrievalService {
     // 5) Drop exact-duplicate content (keep the higher combined score).
     candidates = dedupeByContentHash(candidates);
 
-    // 6) Rerank (deterministic heuristic by default).
+    // 6) Rerank the strongest merged candidates only (bounds LLM-rerank cost),
+    //    then drop anything below the relevance floor so weak/off-topic chunks
+    //    never reach the answer. Nothing above the floor => general-knowledge answer.
+    candidates.sort((a, b) => b.combinedScore - a.combinedScore);
+    candidates = candidates.slice(0, env.RETRIEVAL_RERANK_POOL);
+
     const rerankInput: RerankCandidate[] = candidates.map((c) => ({
       id: c.chunkId,
       text: c.content,
@@ -180,7 +185,9 @@ export class RetrievalService {
       (await this.reranker.rerank(params.question, rerankInput)).map((r) => [r.id, r.score]),
     );
     candidates.forEach((c) => (c.rerankScore = rerankScores.get(c.chunkId) ?? c.combinedScore));
+    candidates = candidates.filter((c) => c.rerankScore >= env.RETRIEVAL_MIN_SCORE);
     candidates.sort((a, b) => b.rerankScore - a.rerankScore);
+    if (candidates.length === 0) return [];
 
     // 7) Final selection: per-doc cap (unless highly relevant) + token budget + topK.
     const selected: RetrievedChunk[] = [];

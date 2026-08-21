@@ -10,7 +10,7 @@
 
 export type ProviderMode = 'openai' | 'fake';
 
-export type RerankMode = 'heuristic';
+export type RerankMode = 'heuristic' | 'llm';
 
 export interface ProviderConfig {
   mode: ProviderMode;
@@ -19,7 +19,7 @@ export interface ProviderConfig {
   embeddingModel: string;
   embeddingDimension: number;
   llmModel: string;
-  /** Reranker selection. Only the deterministic heuristic ships today. */
+  /** Reranker selection: 'llm' (default with a real model) or 'heuristic'. */
   rerankMode: RerankMode;
 }
 
@@ -57,6 +57,15 @@ export function resolveProviderConfig(env: Env): ProviderConfig {
     embeddingModel: env.EMBEDDING_MODEL ?? 'text-embedding-3-small',
     embeddingDimension: Number(env.EMBEDDING_DIMENSION ?? 1536),
     llmModel: env.LLM_MODEL ?? 'gpt-4o-mini',
-    rerankMode: 'heuristic',
+    // LLM reranker needs a real model; fake mode always uses the heuristic.
+    // RERANK_MODE can force either (e.g. 'heuristic' to save latency/cost).
+    rerankMode: resolveRerankMode(env.RERANK_MODE, mode),
   };
+}
+
+function resolveRerankMode(explicit: string | undefined, mode: ProviderMode): RerankMode {
+  if (explicit === 'heuristic' || explicit === 'llm') {
+    return explicit === 'llm' && mode !== 'openai' ? 'heuristic' : explicit;
+  }
+  return mode === 'openai' ? 'llm' : 'heuristic';
 }

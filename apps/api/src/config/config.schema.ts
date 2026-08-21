@@ -37,6 +37,11 @@ export const EnvSchema = z.object({
   // Max chunks per document unless a chunk clears the high-relevance bar.
   RETRIEVAL_MAX_PER_DOC: z.coerce.number().int().positive().default(3),
   RETRIEVAL_HIGH_RELEVANCE: z.coerce.number().min(0).max(1).default(0.85),
+  // How many top merged candidates to feed the reranker (bounds LLM-rerank cost).
+  RETRIEVAL_RERANK_POOL: z.coerce.number().int().positive().default(24),
+  // Drop candidates whose rerank score is below this, so weak/off-topic chunks
+  // never become context (0 relevance in => general-knowledge answer, no citations).
+  RETRIEVAL_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.35),
   // Approx token budget for the final context set.
   RETRIEVAL_TOKEN_BUDGET: z.coerce.number().int().positive().default(6000),
 

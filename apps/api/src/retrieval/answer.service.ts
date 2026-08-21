@@ -75,6 +75,36 @@ export class AnswerService {
 
     return { text: result.text, citations, model: result.model, usage: result.usage };
   }
+
+  /**
+   * Rewrite a follow-up question into a standalone search query using the prior
+   * turns, so retrieval isn't crippled by pronouns/ellipsis ("what about seniors?",
+   * "point out loopholes"). Returns the original question on any failure or when
+   * there is no history to resolve against.
+   */
+  async condenseQuery(question: string, history: ChatTurn[]): Promise<string> {
+    if (history.length === 0) return question;
+    try {
+      const convo = history.map((h) => `${h.role}: ${h.content}`).join('\n');
+      const result = await this.llm.complete({
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Rewrite the user\'s latest message into a single, self-contained search query for a ' +
+              'company document knowledge base. Resolve pronouns and references using the conversation, ' +
+              'and keep the specific subject/entities. Reply with ONLY the query text — no quotes, no prose.',
+          },
+          { role: 'user', content: `Conversation:\n${convo}\n\nLatest message: ${question}\n\nSearch query:` },
+        ],
+        temperature: 0,
+      });
+      const rewritten = result.text.trim().replace(/^["']|["']$/g, '');
+      return rewritten.length > 0 ? rewritten : question;
+    } catch {
+      return question;
+    }
+  }
 }
 
 /** Parse unique [n] markers that fall within the provided context range. */
