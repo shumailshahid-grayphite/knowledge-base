@@ -296,6 +296,41 @@ export interface AuditLogsTable {
 }
 
 /** The Kysely database interface — inject `Kysely<DB>` into services. */
+export type KnowledgeGapStatus = 'open' | 'resolved' | 'ignored';
+
+export interface KnowledgeGapsTable {
+  id: Generated<string>;
+  organization_id: string;
+  status: WithDefault<KnowledgeGapStatus>;
+  title: string;
+  // pgvector, serialized to/from a '[..]' string (read/written via raw SQL).
+  centroid_embedding: ColumnType<string | null, string | null | undefined, string | null>;
+  occurrence_count: WithDefault<number>;
+  first_seen_at: GenTimestamp;
+  last_seen_at: GenTimestamp;
+  resolved_at: NullTimestamp;
+  resolved_by: Nullable<string>;
+  created_at: GenTimestamp;
+  updated_at: GenTimestamp;
+}
+
+export interface KnowledgeGapSignalsTable {
+  id: Generated<string>;
+  organization_id: string;
+  gap_id: Nullable<string>;
+  session_id: Nullable<string>;
+  message_id: Nullable<string>;
+  user_id: Nullable<string>;
+  question: string;
+  standalone_question: string;
+  embedding: ColumnType<string | null, string | null | undefined, string | null>;
+  retrieval_outcome: string;
+  reason: string;
+  top_score: Nullable<number>;
+  weak_matches: JsonArr;
+  created_at: GenTimestamp;
+}
+
 export interface DB {
   organizations: OrganizationsTable;
   users: UsersTable;
@@ -314,4 +349,6 @@ export interface DB {
   connector_secrets: ConnectorSecretsTable;
   remote_object_mapping: RemoteObjectMappingTable;
   audit_logs: AuditLogsTable;
+  knowledge_gaps: KnowledgeGapsTable;
+  knowledge_gap_signals: KnowledgeGapSignalsTable;
 }

@@ -45,6 +45,20 @@ export const EnvSchema = z.object({
   // Approx token budget for the final context set.
   RETRIEVAL_TOKEN_BUDGET: z.coerce.number().int().positive().default(6000),
 
+  // ---- Knowledge Gaps V1 ----
+  KNOWLEDGE_GAPS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  // Adequacy bar, SEPARATE from RETRIEVAL_MIN_SCORE: a surviving top score below
+  // this flags weak_evidence. Initial heuristic — tune from real usage, not a
+  // permanent product threshold.
+  KNOWLEDGE_GAPS_ADEQUACY_SCORE: z.coerce.number().min(0).max(1).default(0.4),
+  // Cosine similarity above which a new signal joins an existing gap. Calibrated
+  // for text-embedding-3-small, where differently-phrased same-topic questions sit
+  // around 0.7 and unrelated topics well below 0.5. Also a tunable heuristic.
+  KNOWLEDGE_GAPS_SIMILARITY: z.coerce.number().min(0).max(1).default(0.65),
+
   // ---- Connectors / OAuth ----
   CONNECTOR_ENCRYPTION_KEY: z.string().optional(), // base64 of 32 bytes; required to use connectors
   API_PUBLIC_URL: z.string().default('http://localhost:4000'),

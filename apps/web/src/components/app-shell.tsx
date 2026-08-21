@@ -10,6 +10,7 @@ import {
   FolderPlus,
   HardDrive,
   Home,
+  Lightbulb,
   LogOut,
   MoreHorizontal,
   Pencil,
@@ -42,6 +43,9 @@ const NAV = [
   { href: '/ask', label: 'Ask', icon: Search },
   { href: '/connectors', label: 'Connected sources', icon: Plug },
 ];
+
+// Owner/admin-only nav (mirrors the API RolesGuard on /knowledge-gaps).
+const ADMIN_NAV = [{ href: '/knowledge-gaps', label: 'Knowledge Gaps', icon: Lightbulb }];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -147,7 +151,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="mt-5 flex flex-col gap-0.5">
-          {NAV.map((item) => {
+          {[...NAV, ...(user.role === 'owner' || user.role === 'admin' ? ADMIN_NAV : [])].map((item) => {
             const active =
               item.href === '/'
                 ? pathname === '/' || pathname.startsWith('/folders')

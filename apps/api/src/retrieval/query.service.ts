@@ -10,6 +10,7 @@ import { DatabaseService } from '../database/database.service.js';
 import { SpacesService } from '../spaces/spaces.service.js';
 import { RetrievalService, type RetrievedChunk } from './retrieval.service.js';
 import { AnswerService, type ChatTurn } from './answer.service.js';
+import { KnowledgeGapsService } from '../knowledge-gaps/knowledge-gaps.service.js';
 
 @Injectable()
 export class QueryService {
@@ -20,6 +21,7 @@ export class QueryService {
     private readonly spaces: SpacesService,
     private readonly retrieval: RetrievalService,
     private readonly answer: AnswerService,
+    private readonly gaps: KnowledgeGapsService,
   ) {}
 
   async ask(user: AuthUser, spaceId: string, req: QueryRequest): Promise<QueryResponse> {
@@ -70,7 +72,7 @@ export class QueryService {
     const usage = generated.usage;
     const noAnswer = false;
 
-    const sessionId = await this.persist(user, spaceId, req, {
+    const { sessionId, userMessageId } = await this.persist(user, spaceId, req, {
       answer,
       citations,
       chunks,
@@ -78,6 +80,24 @@ export class QueryService {
       usage,
       latencyMs: Date.now() - startedAt,
     });
+
+    // Knowledge Gaps: record a signal when the KB inadequately supported this
+    // question. Skipped for attachment turns (the user supplied their own doc).
+    // Best-effort — recordIfGap never throws, so chat is unaffected either way.
+    if (!req.attachment) {
+      await this.gaps.recordIfGap({
+        user,
+        sessionId,
+        messageId: userMessageId,
+        question: req.question,
+        standaloneQuestion: searchQuery,
+        evidence: chunks.map((c) => ({
+          documentName: c.documentName,
+          score: c.score,
+          pageNumber: c.pageNumber,
+        })),
+      });
+    }
 
     this.logger.log(
       { spaceId, retrieved: chunks.length, noAnswer, latencyMs: Date.now() - startedAt },
@@ -266,7 +286,7 @@ export class QueryService {
       usage?: LlmTokenUsage;
       latencyMs: number;
     },
-  ): Promise<string> {
+  ): Promise<{ sessionId: string; userMessageId: string | null }> {
     let sessionId = req.sessionId ?? null;
 
     if (sessionId) {
@@ -293,7 +313,7 @@ export class QueryService {
       sessionId = created.id;
     }
 
-    await this.database.db
+    const inserted = await this.database.db
       .insertInto('query_messages')
       .values([
         {
@@ -313,7 +333,9 @@ export class QueryService {
           citations: JSON.stringify(result.citations),
         },
       ])
+      .returning(['id', 'role'])
       .execute();
+    const userMessageId = inserted.find((r) => r.role === 'user')?.id ?? null;
 
     await this.database.db
       .insertInto('retrieval_logs')
@@ -354,6 +376,6 @@ export class QueryService {
       .where('id', '=', sessionId)
       .execute();
 
-    return sessionId;
+    return { sessionId, userMessageId };
   }
 }
