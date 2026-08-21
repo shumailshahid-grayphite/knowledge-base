@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Res,
@@ -22,6 +23,8 @@ const SyncBody = z.object({
   selector: z.record(z.any()).default({}),
   spaceId: z.string().uuid().optional(),
 });
+
+const AutoSyncBody = z.object({ enabled: z.boolean() });
 
 @Controller('connectors')
 export class ConnectorsController {
@@ -80,6 +83,16 @@ export class ConnectorsController {
   @UseGuards(AuthGuard)
   history(@CurrentUser() user: AuthUser, @Param('id', new ParseUUIDPipe()) id: string) {
     return this.connectors.history(user, id);
+  }
+
+  @Patch(':id/auto-sync')
+  @UseGuards(AuthGuard)
+  autoSync(
+    @CurrentUser() user: AuthUser,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(AutoSyncBody)) body: z.infer<typeof AutoSyncBody>,
+  ) {
+    return this.connectors.setAutoSync(user, id, body.enabled);
   }
 
   @Delete(':id')

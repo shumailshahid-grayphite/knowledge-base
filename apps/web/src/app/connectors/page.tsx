@@ -2,19 +2,25 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import useSWR from 'swr';
-import { Cloud, Plug } from 'lucide-react';
+import useSWR, { mutate } from 'swr';
+import { Cloud, Plug, RefreshCw } from 'lucide-react';
 import { apiFetch, fetcher } from '@/lib/api';
 import { useDefaultSpace } from '@/lib/kb';
 import { Badge } from '@/components/ui/badge';
-import { formatDate } from '@/lib/utils';
+import { cn, formatDate } from '@/lib/utils';
 
+interface ConnectorConfig {
+  autoSync?: boolean;
+  spaceId?: string;
+  lastSelector?: unknown;
+}
 interface ConnectorRow {
   id: string;
   type: string;
   name: string;
   status: string;
   createdAt: string;
+  config?: ConnectorConfig;
 }
 
 const PROVIDERS = [
@@ -96,23 +102,78 @@ export default function ConnectorsPage() {
         )}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {connectors?.map((c) => (
-            <Link
-              key={c.id}
-              href={`/connectors/${c.id}`}
-              className="group flex items-center gap-3 rounded-lg bg-muted/50 px-4 py-3 hover:bg-muted"
-            >
-              <Cloud className="h-5 w-5 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{c.name}</div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {typeLabel(c.type)} · connected {formatDate(c.createdAt)}
-                </div>
-              </div>
-              <Badge variant={c.status === 'active' ? 'success' : 'secondary'}>{c.status}</Badge>
-            </Link>
+            <ConnectionCard key={c.id} c={c} onError={setError} />
           ))}
         </div>
       </section>
     </div>
+  );
+}
+
+function ConnectionCard({ c, onError }: { c: ConnectorRow; onError: (m: string | null) => void }) {
+  const [saving, setSaving] = useState(false);
+  const synced = c.config?.lastSelector != null;
+  const autoOn = c.config?.autoSync !== false; // default on once synced
+
+  async function toggle(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!synced || saving) return;
+    setSaving(true);
+    onError(null);
+    try {
+      await apiFetch(`/connectors/${c.id}/auto-sync`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: !autoOn }),
+      });
+      await mutate('/connectors');
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not update auto-sync');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Link
+      href={`/connectors/${c.id}`}
+      className="group flex flex-col gap-2 rounded-lg bg-muted/50 px-4 py-3 hover:bg-muted"
+    >
+      <div className="flex items-center gap-3">
+        <Cloud className="h-5 w-5 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">{c.name}</div>
+          <div className="truncate text-xs text-muted-foreground">
+            {typeLabel(c.type)} · connected {formatDate(c.createdAt)}
+          </div>
+        </div>
+        <Badge variant={c.status === 'active' ? 'success' : 'secondary'}>{c.status}</Badge>
+      </div>
+      {/* Auto-sync control */}
+      <div className="flex items-center justify-between border-t pt-2">
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <RefreshCw className="h-3 w-3" />
+          {synced ? (autoOn ? 'Auto-sync on' : 'Auto-sync off') : 'Sync once to enable auto-sync'}
+        </span>
+        {synced && (
+          <button
+            onClick={toggle}
+            disabled={saving}
+            className={cn(
+              'relative h-4 w-7 shrink-0 rounded-full transition-colors disabled:opacity-50',
+              autoOn ? 'bg-primary' : 'bg-muted-foreground/30',
+            )}
+            title={autoOn ? 'Turn auto-sync off' : 'Turn auto-sync on'}
+          >
+            <span
+              className={cn(
+                'absolute top-0.5 h-3 w-3 rounded-full bg-background transition-all',
+                autoOn ? 'left-3.5' : 'left-0.5',
+              )}
+            />
+          </button>
+        )}
+      </div>
+    </Link>
   );
 }

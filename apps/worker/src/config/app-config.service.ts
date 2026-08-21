@@ -20,6 +20,12 @@ const EnvSchema = z.object({
   OCR_LANG: z.string().default('eng'),
   // Required only when connector sync is used (decrypting stored OAuth tokens).
   CONNECTOR_ENCRYPTION_KEY: z.string().optional(),
+  // Periodic re-sync of connected sources so new/changed files flow in on their own.
+  AUTO_SYNC_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  AUTO_SYNC_INTERVAL_MINUTES: z.coerce.number().int().positive().default(30),
 });
 
 export type WorkerEnv = z.infer<typeof EnvSchema>;

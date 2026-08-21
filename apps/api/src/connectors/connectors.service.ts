@@ -143,10 +143,27 @@ export class ConnectorsService {
     input: { selector: Record<string, unknown>; spaceId?: string },
   ) {
     const row = await this.requireConnector(user.organizationId, connectorId);
-    const configSpace = (row.config as { spaceId?: string }).spaceId ?? undefined;
+    const existingConfig = (row.config as Record<string, unknown>) ?? {};
+    const configSpace = (existingConfig.spaceId as string | undefined) ?? undefined;
     const spaceId = input.spaceId ?? configSpace;
     if (!spaceId) throw new BadRequestException('No target space for this sync');
     await this.spaces.requireSpace(user.organizationId, spaceId);
+
+    // Remember what/where was synced so the worker can auto-sync it later. Keep any
+    // existing autoSync choice; default it on the first time a connector is synced.
+    await this.database.db
+      .updateTable('source_connectors')
+      .set({
+        config: JSON.stringify({
+          ...existingConfig,
+          spaceId,
+          lastSelector: input.selector ?? {},
+          autoSync: (existingConfig.autoSync as boolean | undefined) ?? true,
+        }),
+      })
+      .where('id', '=', connectorId)
+      .where('organization_id', '=', user.organizationId)
+      .execute();
 
     const job = await this.database.db
       .insertInto('sync_jobs')
@@ -193,6 +210,19 @@ export class ConnectorsService {
       .where('id', '=', connectorId)
       .where('organization_id', '=', user.organizationId)
       .execute();
+  }
+
+  /** Turn periodic auto-sync on/off for a connector (worker reads config.autoSync). */
+  async setAutoSync(user: AuthUser, connectorId: string, enabled: boolean) {
+    const row = await this.requireConnector(user.organizationId, connectorId);
+    const config = (row.config as Record<string, unknown>) ?? {};
+    await this.database.db
+      .updateTable('source_connectors')
+      .set({ config: JSON.stringify({ ...config, autoSync: enabled }) })
+      .where('id', '=', connectorId)
+      .where('organization_id', '=', user.organizationId)
+      .execute();
+    return { id: connectorId, autoSync: enabled };
   }
 
   private async requireConnector(
