@@ -5,16 +5,21 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { mutate } from 'swr';
 import {
+  Check,
   Cloud,
   FolderPlus,
   HardDrive,
   Home,
   LogOut,
+  MoreHorizontal,
+  Pencil,
   Plug,
   Plus,
   Search,
   Settings,
+  Trash2,
   Upload,
+  X,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { apiFetch, ApiError } from '@/lib/api';
@@ -22,9 +27,13 @@ import {
   useDefaultSpace,
   useChats,
   uploadDocuments,
+  renameChat,
+  deleteChat,
+  chatsKey,
   foldersKey,
   docsKey,
   folderIdFromPath,
+  type ChatSummary,
 } from '@/lib/kb';
 import { cn } from '@/lib/utils';
 
@@ -174,19 +183,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
             {chats && chats.length > 0 ? (
               chats.map((c) => (
-                <Link
+                <ChatItem
                   key={c.id}
-                  href={`/ask/${c.id}`}
-                  className={cn(
-                    'block truncate rounded-md px-3 py-1.5 text-sm transition-colors',
-                    pathname === `/ask/${c.id}`
-                      ? 'bg-accent font-medium'
-                      : 'text-foreground/70 hover:bg-accent',
-                  )}
-                  title={c.title ?? 'New chat'}
-                >
-                  {c.title || 'New chat'}
-                </Link>
+                  chat={c}
+                  active={pathname === `/ask/${c.id}`}
+                  spaceId={spaceId}
+                  onDeleted={() => {
+                    if (pathname === `/ask/${c.id}`) router.replace('/ask');
+                  }}
+                  onError={setErr}
+                />
               ))
             ) : (
               <p className="px-3 py-1 text-xs text-muted-foreground">No chats yet</p>
@@ -303,5 +309,114 @@ function MenuItem({ icon, label, onClick }: { icon: ReactNode; label: string; on
       {icon}
       {label}
     </button>
+  );
+}
+
+function ChatItem({
+  chat,
+  active,
+  spaceId,
+  onDeleted,
+  onError,
+}: {
+  chat: ChatSummary;
+  active: boolean;
+  spaceId: string | undefined;
+  onDeleted: () => void;
+  onError: (msg: string) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(chat.title ?? '');
+
+  async function commitRename() {
+    const title = name.trim();
+    setRenaming(false);
+    if (!spaceId || !title || title === chat.title) return;
+    try {
+      await renameChat(spaceId, chat.id, title);
+      await mutate(chatsKey(spaceId));
+    } catch {
+      onError('Could not rename chat');
+    }
+  }
+
+  async function remove() {
+    setMenuOpen(false);
+    if (!spaceId) return;
+    try {
+      await deleteChat(spaceId, chat.id);
+      await mutate(chatsKey(spaceId));
+      onDeleted();
+    } catch {
+      onError('Could not delete chat');
+    }
+  }
+
+  if (renaming) {
+    return (
+      <div className="flex items-center gap-1 px-2 py-1">
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitRename();
+            if (e.key === 'Escape') setRenaming(false);
+          }}
+          className="min-w-0 flex-1 rounded border bg-background px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        <button onClick={commitRename} className="shrink-0 rounded p-1 hover:bg-accent" title="Save">
+          <Check className="h-3.5 w-3.5" />
+        </button>
+        <button onClick={() => setRenaming(false)} className="shrink-0 rounded p-1 hover:bg-accent" title="Cancel">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group relative flex items-center">
+      <Link
+        href={`/ask/${chat.id}`}
+        className={cn(
+          'block flex-1 truncate rounded-md px-3 py-1.5 pr-8 text-sm transition-colors',
+          active ? 'bg-accent font-medium' : 'text-foreground/70 hover:bg-accent',
+        )}
+        title={chat.title ?? 'New chat'}
+      >
+        {chat.title || 'New chat'}
+      </Link>
+      <button
+        onClick={() => setMenuOpen((v) => !v)}
+        className={cn(
+          'absolute right-1 grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-background/80',
+          menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+        )}
+        title="Chat options"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {menuOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+          <div className="absolute right-1 top-8 z-20 w-40 rounded-lg border bg-background p-1.5 shadow-lg">
+            <button
+              onClick={() => { setMenuOpen(false); setName(chat.title ?? ''); setRenaming(true); }}
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-accent"
+            >
+              <Pencil className="h-4 w-4" /> Rename
+            </button>
+            <button
+              onClick={remove}
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-accent"
+            >
+              <Trash2 className="h-4 w-4" /> Delete
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

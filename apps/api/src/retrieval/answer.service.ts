@@ -33,6 +33,7 @@ export class AnswerService {
     question: string,
     chunks: RetrievedChunk[],
     history: ChatTurn[] = [],
+    attachment?: { name: string; text: string },
   ): Promise<GeneratedAnswer> {
     const context =
       chunks.length > 0
@@ -44,6 +45,14 @@ export class AnswerService {
             .join('\n\n')
         : '(No relevant company documents were found for this question.)';
 
+    // The attached draft is the SUBJECT under review, not a source to cite. Bound
+    // its length so it can't crowd out the company context.
+    const attachmentBlock = attachment
+      ? `\n\nThe user attached a document titled "${attachment.name}" for you to review/compare. ` +
+        'This is the user\'s own draft — it is NOT a company document, so never cite it as a source. ' +
+        `Compare or evaluate it against the company context above.\n--- ATTACHED DOCUMENT ---\n${attachment.text.slice(0, 12000)}\n--- END ATTACHED DOCUMENT ---`
+      : '';
+
     const result = await this.llm.complete({
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -52,7 +61,7 @@ export class AnswerService {
         {
           role: 'user',
           content:
-            `Question: ${question}\n\nContext:\n${context}\n\n` +
+            `Question: ${question}\n\nContext:\n${context}${attachmentBlock}\n\n` +
             'Cite documents you use inline as [n]. Use the prior conversation only to interpret the question. ' +
             'If the context does not answer it, answer from general knowledge and note that it is not from the company documents.',
         },

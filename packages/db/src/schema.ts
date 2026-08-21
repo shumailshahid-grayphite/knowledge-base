@@ -251,6 +251,7 @@ export interface QueryMessagesTable {
   role: 'user' | 'assistant' | 'system';
   content: string;
   citations: JsonArr;
+  attachments: JsonArr;
   created_at: GenTimestamp;
 }
 

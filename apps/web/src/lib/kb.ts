@@ -1,8 +1,8 @@
 'use client';
 
 import useSWR from 'swr';
-import type { FolderResponse, SpaceResponse } from '@kb/shared';
-import { API_BASE, fetcher, getToken } from '@/lib/api';
+import type { ExtractAttachmentResponse, FolderResponse, SpaceResponse } from '@kb/shared';
+import { API_BASE, apiFetch, fetcher, getToken } from '@/lib/api';
 
 /** SWR keys shared between the sidebar "New" actions and the browser view. */
 export const foldersKey = (spaceId: string) => `/spaces/${spaceId}/folders`;
@@ -66,6 +66,35 @@ export const chatsKey = (spaceId: string) => `/spaces/${spaceId}/chats`;
 export function useChats(spaceId: string | undefined) {
   const { data } = useSWR<ChatSummary[]>(spaceId ? chatsKey(spaceId) : null, fetcher);
   return { chats: data };
+}
+
+export function renameChat(spaceId: string, sessionId: string, title: string) {
+  return apiFetch(`/spaces/${spaceId}/chats/${sessionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title }),
+  });
+}
+
+export function deleteChat(spaceId: string, sessionId: string) {
+  return apiFetch(`/spaces/${spaceId}/chats/${sessionId}`, { method: 'DELETE' });
+}
+
+/** Extract text from an attached draft (ephemeral — returned to the client, not stored). */
+export async function extractAttachment(
+  spaceId: string,
+  file: File,
+): Promise<ExtractAttachmentResponse> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_BASE}/spaces/${spaceId}/attachments/extract`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${getToken() ?? ''}` },
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error((await res.json().catch(() => ({}))).message ?? `Could not read file (${res.status})`);
+  }
+  return res.json();
 }
 
 /** Build the ancestor chain (root → folder) from the flat folder list. */

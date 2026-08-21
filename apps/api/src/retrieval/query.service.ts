@@ -26,6 +26,12 @@ export class QueryService {
     const startedAt = Date.now();
     await this.spaces.requireSpace(user.organizationId, spaceId);
 
+    // Edit-and-resend: drop the edited turn and everything after it so this
+    // request replaces that point in the conversation.
+    if (req.sessionId && req.editFromMessageId) {
+      await this.truncateFrom(user, spaceId, req.sessionId, req.editFromMessageId);
+    }
+
     // Resolve an optional folder filter to its materialized-path prefix so search
     // scopes to that folder AND its whole subtree. folderId wins over any raw prefix.
     const filters = await this.resolveFolderFilter(user, spaceId, req.filters);
@@ -33,11 +39,18 @@ export class QueryService {
     // Prior turns of this conversation (for follow-up questions).
     const history = req.sessionId ? await this.loadHistory(user, spaceId, req.sessionId) : [];
 
-    // For follow-ups, retrieve on a standalone rewrite ("what about seniors?" ->
-    // the actual subject) while the answer still uses the user's real question.
-    const searchQuery = await this.answer.condenseQuery(req.question, history);
-    if (searchQuery !== req.question) {
-      this.logger.debug({ original: req.question, searchQuery }, 'rewrote follow-up for retrieval');
+    // Retrieval query: an attached draft drives retrieval toward the company docs
+    // worth comparing it against; otherwise a follow-up is rewritten standalone
+    // ("what about seniors?" -> the actual subject). The answer always uses the
+    // user's real question.
+    let searchQuery: string;
+    if (req.attachment) {
+      searchQuery = `${req.question}\n\n${req.attachment.text.slice(0, 2000)}`;
+    } else {
+      searchQuery = await this.answer.condenseQuery(req.question, history);
+      if (searchQuery !== req.question) {
+        this.logger.debug({ original: req.question, searchQuery }, 'rewrote follow-up for retrieval');
+      }
     }
 
     const chunks = await this.retrieval.retrieve({
@@ -49,8 +62,8 @@ export class QueryService {
     });
 
     // Always answer: grounded + cited when the KB has relevant context, general
-    // knowledge (no citations) otherwise.
-    const generated = await this.answer.generate(req.question, chunks, history);
+    // knowledge (no citations) otherwise. An attachment is reviewed against context.
+    const generated = await this.answer.generate(req.question, chunks, history, req.attachment);
     const answer = generated.text;
     const citations: Citation[] = generated.citations;
     const model = generated.model;
@@ -146,7 +159,7 @@ export class QueryService {
 
     const rows = await this.database.db
       .selectFrom('query_messages')
-      .select(['role', 'content', 'citations'])
+      .select(['id', 'role', 'content', 'citations', 'attachments'])
       .where('session_id', '=', sessionId)
       .where('organization_id', '=', user.organizationId)
       .orderBy('created_at', 'asc')
@@ -156,11 +169,77 @@ export class QueryService {
       id: session.id,
       title: session.title,
       messages: rows.map((r) => ({
+        id: r.id,
         role: r.role,
         content: r.content,
         citations: (r.citations ?? []) as unknown[],
+        attachments: (r.attachments ?? []) as unknown[],
       })),
     };
+  }
+
+  /** Rename a chat session. */
+  async renameChat(user: AuthUser, spaceId: string, sessionId: string, title: string) {
+    await this.spaces.requireSpace(user.organizationId, spaceId);
+    const res = await this.database.db
+      .updateTable('query_sessions')
+      .set({ title: title.trim().slice(0, 120) })
+      .where('id', '=', sessionId)
+      .where('organization_id', '=', user.organizationId)
+      .where('knowledge_base_id', '=', spaceId)
+      .executeTakeFirst();
+    if (!res.numUpdatedRows) throw new NotFoundException('Chat not found');
+    return { id: sessionId, title };
+  }
+
+  /** Delete a chat session (messages cascade via FK). */
+  async deleteChat(user: AuthUser, spaceId: string, sessionId: string) {
+    await this.spaces.requireSpace(user.organizationId, spaceId);
+    const res = await this.database.db
+      .deleteFrom('query_sessions')
+      .where('id', '=', sessionId)
+      .where('organization_id', '=', user.organizationId)
+      .where('knowledge_base_id', '=', spaceId)
+      .executeTakeFirst();
+    if (!res.numDeletedRows) throw new NotFoundException('Chat not found');
+    return { id: sessionId };
+  }
+
+  /**
+   * For edit-and-resend: delete the target message and every message created at or
+   * after it (validated to belong to this user's session), so the caller can re-ask
+   * from that point.
+   */
+  private async truncateFrom(
+    user: AuthUser,
+    spaceId: string,
+    sessionId: string,
+    messageId: string,
+  ): Promise<void> {
+    const session = await this.database.db
+      .selectFrom('query_sessions')
+      .select('id')
+      .where('id', '=', sessionId)
+      .where('organization_id', '=', user.organizationId)
+      .where('knowledge_base_id', '=', spaceId)
+      .executeTakeFirst();
+    if (!session) return;
+
+    const target = await this.database.db
+      .selectFrom('query_messages')
+      .select('created_at')
+      .where('id', '=', messageId)
+      .where('session_id', '=', sessionId)
+      .where('organization_id', '=', user.organizationId)
+      .executeTakeFirst();
+    if (!target) return;
+
+    await this.database.db
+      .deleteFrom('query_messages')
+      .where('session_id', '=', sessionId)
+      .where('organization_id', '=', user.organizationId)
+      .where('created_at', '>=', target.created_at)
+      .execute();
   }
 
   async recentLogs(user: AuthUser, spaceId: string) {
@@ -222,6 +301,8 @@ export class QueryService {
           session_id: sessionId,
           role: 'user',
           content: req.question,
+          // Record the attachment NAME only (the draft text stays ephemeral).
+          attachments: JSON.stringify(req.attachment ? [{ name: req.attachment.name }] : []),
         },
         {
           organization_id: user.organizationId,

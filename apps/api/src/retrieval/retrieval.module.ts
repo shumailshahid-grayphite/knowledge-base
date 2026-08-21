@@ -7,6 +7,7 @@ import { RetrievalService } from './retrieval.service.js';
 import { AnswerService } from './answer.service.js';
 import { QueryService } from './query.service.js';
 import { QueryController } from './query.controller.js';
+import { AttachmentExtractorService } from './attachment-extractor.service.js';
 
 @Module({
   imports: [AuthModule, SpacesModule],
@@ -16,6 +17,7 @@ import { QueryController } from './query.controller.js';
     RetrievalService,
     AnswerService,
     QueryService,
+    AttachmentExtractorService,
   ],
   controllers: [QueryController],
   exports: [RetrievalService],

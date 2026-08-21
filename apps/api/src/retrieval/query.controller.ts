@@ -1,14 +1,50 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
-import { QueryRequest, type AuthUser, type QueryResponse } from '@kb/shared';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  QueryRequest,
+  RenameChatRequest,
+  type AuthUser,
+  type ExtractAttachmentResponse,
+  type QueryResponse,
+} from '@kb/shared';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { CurrentUser } from '../common/current-user.decorator.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import type { UploadedFileLike } from '../common/types.js';
 import { QueryService } from './query.service.js';
+import { AttachmentExtractorService } from './attachment-extractor.service.js';
+
+const MAX_ATTACHMENT_BYTES = (Number(process.env.MAX_UPLOAD_MB ?? 50) || 50) * 1024 * 1024;
 
 @Controller('spaces/:spaceId')
 @UseGuards(AuthGuard)
 export class QueryController {
-  constructor(private readonly query: QueryService) {}
+  constructor(
+    private readonly query: QueryService,
+    private readonly attachments: AttachmentExtractorService,
+  ) {}
+
+  /** Extract text from an attached draft (ephemeral — never ingested/stored). */
+  @Post('attachments/extract')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_ATTACHMENT_BYTES } }))
+  extract(
+    @Param('spaceId', new ParseUUIDPipe()) _spaceId: string,
+    @UploadedFile() file: UploadedFileLike | undefined,
+  ): Promise<ExtractAttachmentResponse> {
+    return this.attachments.extract(file);
+  }
 
   @Post('query')
   ask(
@@ -44,5 +80,26 @@ export class QueryController {
     @Param('sessionId', new ParseUUIDPipe()) sessionId: string,
   ) {
     return this.query.getChat(user, spaceId, sessionId);
+  }
+
+  /** Rename a chat. */
+  @Patch('chats/:sessionId')
+  rename(
+    @CurrentUser() user: AuthUser,
+    @Param('spaceId', new ParseUUIDPipe()) spaceId: string,
+    @Param('sessionId', new ParseUUIDPipe()) sessionId: string,
+    @Body(new ZodValidationPipe(RenameChatRequest)) body: RenameChatRequest,
+  ) {
+    return this.query.renameChat(user, spaceId, sessionId, body.title);
+  }
+
+  /** Delete a chat and its messages. */
+  @Delete('chats/:sessionId')
+  remove(
+    @CurrentUser() user: AuthUser,
+    @Param('spaceId', new ParseUUIDPipe()) spaceId: string,
+    @Param('sessionId', new ParseUUIDPipe()) sessionId: string,
+  ) {
+    return this.query.deleteChat(user, spaceId, sessionId);
   }
 }
