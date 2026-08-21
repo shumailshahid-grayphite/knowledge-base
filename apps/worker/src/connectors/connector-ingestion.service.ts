@@ -30,6 +30,7 @@ interface SyncStats {
   updated: number;
   skipped: number;
   failed: number;
+  deleted: number;
 }
 
 /**
@@ -57,7 +58,7 @@ export class ConnectorIngestionService {
       .where('id', '=', payload.syncJobId)
       .execute();
 
-    const stats: SyncStats = { found: 0, new: 0, updated: 0, skipped: 0, failed: 0 };
+    const stats: SyncStats = { found: 0, new: 0, updated: 0, skipped: 0, failed: 0, deleted: 0 };
     try {
       const connectorRow = await this.database.db
         .selectFrom('source_connectors')
@@ -85,6 +86,16 @@ export class ConnectorIngestionService {
           stats.failed += 1;
           this.logger.error({ file: file.name, err: msg(err) }, 'file sync failed');
         }
+      }
+
+      // Reconcile deletions: on an auto-sync full listing, remove KB docs whose
+      // source item has vanished. Gated to a full listing (cursor null) with a
+      // non-empty result, so a transient empty/partial listing can't purge the KB.
+      if (payload.reconcileDeletes && payload.cursor == null && files.length > 0) {
+        stats.deleted = await this.reconcileDeletions(
+          payload,
+          new Set(files.map((f) => f.sourceItemId)),
+        );
       }
 
       const status = stats.failed > 0 ? (stats.new + stats.updated > 0 ? 'partial' : 'failed') : 'completed';
@@ -312,6 +323,45 @@ export class ConnectorIngestionService {
         })
         .execute();
     }
+  }
+
+  /**
+   * Remove KB documents for source items that were previously mapped but are no
+   * longer present in the current full listing. Deleting the document cascades its
+   * chunks (so retrieval stops immediately); the mapping row survives (document_id
+   * SET NULL) and is tombstoned with deleted_at for audit + re-ingest if it returns.
+   * Returns the number of documents removed.
+   */
+  private async reconcileDeletions(payload: SyncJobV1, seenItemIds: Set<string>): Promise<number> {
+    const mappings = await this.database.db
+      .selectFrom('remote_object_mapping')
+      .select(['id', 'remote_item_id', 'document_id'])
+      .where('organization_id', '=', payload.organizationId)
+      .where('connector_id', '=', payload.connectorId)
+      .where('deleted_at', 'is', null)
+      .execute();
+
+    const gone = mappings.filter((m) => !seenItemIds.has(m.remote_item_id));
+    if (gone.length === 0) return 0;
+
+    let removed = 0;
+    for (const m of gone) {
+      if (m.document_id) {
+        await this.database.db
+          .deleteFrom('documents')
+          .where('id', '=', m.document_id)
+          .where('organization_id', '=', payload.organizationId)
+          .execute();
+        removed += 1;
+      }
+      await this.database.db
+        .updateTable('remote_object_mapping')
+        .set({ deleted_at: new Date(), last_seen_sync_id: payload.syncJobId })
+        .where('id', '=', m.id)
+        .execute();
+    }
+    this.logger.log({ syncJobId: payload.syncJobId, removed }, 'reconciled source deletions');
+    return removed;
   }
 
   private async nextVersionNo(documentId: string): Promise<number> {

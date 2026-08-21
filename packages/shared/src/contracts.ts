@@ -43,6 +43,13 @@ export interface SyncJobV1 {
   selector: Record<string, unknown>;
   /** Delta link / changes pageToken for incremental sync. */
   cursor: string | null;
+  /**
+   * Reconcile deletions: remove KB docs whose source item is no longer present in
+   * a full listing. Set by auto-sync (which re-runs the connector's canonical
+   * selector). Manual syncs leave it off so a one-off scoped sync can't purge docs
+   * that just weren't in that selector.
+   */
+  reconcileDeletes?: boolean;
 }
 
 export type QueueJobPayload = IngestJobV1 | SyncJobV1;

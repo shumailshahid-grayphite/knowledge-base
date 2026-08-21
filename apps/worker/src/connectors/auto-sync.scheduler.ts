@@ -144,6 +144,9 @@ export class AutoSyncScheduler implements OnModuleInit, OnModuleDestroy {
         syncJobId: job.id,
         selector,
         cursor: null,
+        // Auto-sync re-runs the canonical selector, so an item missing from the
+        // full listing genuinely means "deleted at source".
+        reconcileDeletes: true,
       };
       await this.queue!.add(payload.jobType, payload, {
         jobId: payload.syncJobId,
