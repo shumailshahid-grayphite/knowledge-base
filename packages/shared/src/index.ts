@@ -19,3 +19,4 @@ export * from './dto/folder.js';
 export * from './dto/document.js';
 export * from './dto/query.js';
 export * from './dto/knowledge-gaps.js';
+export * from './dto/rag-eval.js';

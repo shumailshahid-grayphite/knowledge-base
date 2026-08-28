@@ -33,6 +33,30 @@ export interface RetrieveParams {
   filters?: RetrievalFilters;
 }
 
+/** One reranked candidate with its full scoring, ranked BEFORE the relevance floor. */
+export interface RankedCandidate {
+  chunkId: string;
+  documentId: string;
+  documentName: string;
+  pageNumber: number | null;
+  vectorScore: number;
+  keywordScore: number;
+  combinedScore: number;
+  rerankScore: number;
+  rank: number; // 1-based over the full reranked list
+}
+
+/**
+ * The full retrieval picture for one query. `ranked` is every reranked candidate
+ * (pre-threshold) — the basis for ranking metrics; `survivors` is what the answer
+ * actually uses (post-threshold + per-doc cap + topK). Evaluation needs both so
+ * ranking failures and threshold failures are diagnosable separately.
+ */
+export interface RetrievalDetail {
+  survivors: RetrievedChunk[];
+  ranked: RankedCandidate[];
+}
+
 interface Merged {
   chunkId: string;
   documentId: string;
@@ -62,7 +86,17 @@ export class RetrievalService {
     @Inject(RERANKER) private readonly reranker: Reranker,
   ) {}
 
+  /** Production entry point: the chunks the answer should use (post-threshold). */
   async retrieve(params: RetrieveParams): Promise<RetrievedChunk[]> {
+    return (await this.retrieveDetailed(params)).survivors;
+  }
+
+  /**
+   * The whole retrieval path for one query — the SAME implementation production
+   * chat uses. `retrieve()` returns `.survivors`; evaluation consumes the full
+   * result. One implementation, two consumers.
+   */
+  async retrieveDetailed(params: RetrieveParams): Promise<RetrievalDetail> {
     const env = this.config.env;
     const poolK = env.RETRIEVAL_CANDIDATE_POOL;
     const sp: VectorSearchParams = {
@@ -94,7 +128,7 @@ export class RetrievalService {
         ? keywordRes.value
         : (this.logger.warn({ err: asMessage(keywordRes.reason) }, 'keyword search failed'), []);
 
-    if (vectorHits.length === 0 && keywordHits.length === 0) return [];
+    if (vectorHits.length === 0 && keywordHits.length === 0) return { survivors: [], ranked: [] };
 
     // 3) Normalize each score set to [0,1] and merge with configured weights.
     const vNorm = normalize(vectorHits.map((h) => h.score));
@@ -185,15 +219,28 @@ export class RetrievalService {
       (await this.reranker.rerank(params.question, rerankInput)).map((r) => [r.id, r.score]),
     );
     candidates.forEach((c) => (c.rerankScore = rerankScores.get(c.chunkId) ?? c.combinedScore));
-    candidates = candidates.filter((c) => c.rerankScore >= env.RETRIEVAL_MIN_SCORE);
+    // Full reranked ranking BEFORE the relevance floor — the basis for ranking
+    // metrics (Recall@K / MRR). The threshold only selects survivors below.
     candidates.sort((a, b) => b.rerankScore - a.rerankScore);
-    if (candidates.length === 0) return [];
+    const ranked: RankedCandidate[] = candidates.map((c, i) => ({
+      chunkId: c.chunkId,
+      documentId: c.documentId,
+      documentName: c.documentName,
+      pageNumber: c.pageNumber,
+      vectorScore: c.vectorScore,
+      keywordScore: c.keywordScore,
+      combinedScore: c.combinedScore,
+      rerankScore: c.rerankScore,
+      rank: i + 1,
+    }));
 
-    // 7) Final selection: per-doc cap (unless highly relevant) + token budget + topK.
+    // 7) Final selection over threshold survivors: per-doc cap (unless highly
+    //    relevant) + token budget + topK.
+    const survivorPool = candidates.filter((c) => c.rerankScore >= env.RETRIEVAL_MIN_SCORE);
     const selected: RetrievedChunk[] = [];
     const perDoc = new Map<string, number>();
     let tokens = 0;
-    for (const c of candidates) {
+    for (const c of survivorPool) {
       if (selected.length >= params.topK) break;
       const used = perDoc.get(c.documentId) ?? 0;
       const highlyRelevant = c.rerankScore >= env.RETRIEVAL_HIGH_RELEVANCE;
@@ -219,7 +266,7 @@ export class RetrievalService {
       },
       'hybrid retrieval complete',
     );
-    return selected;
+    return { survivors: selected, ranked };
   }
 }
 

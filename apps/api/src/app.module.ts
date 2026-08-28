@@ -13,6 +13,7 @@ import { DocumentsModule } from './documents/documents.module.js';
 import { RetrievalModule } from './retrieval/retrieval.module.js';
 import { ConnectorsModule } from './connectors/connectors.module.js';
 import { KnowledgeGapsModule } from './knowledge-gaps/knowledge-gaps.module.js';
+import { EvaluationModule } from './evaluation/evaluation.module.js';
 import { HealthModule } from './health/health.module.js';
 import { TenantInterceptor } from './common/tenant.interceptor.js';
 
@@ -39,6 +40,7 @@ const isProd = process.env.NODE_ENV === 'production';
     RetrievalModule,
     ConnectorsModule,
     KnowledgeGapsModule,
+    EvaluationModule,
     HealthModule,
   ],
   providers: [{ provide: APP_INTERCEPTOR, useClass: TenantInterceptor }],

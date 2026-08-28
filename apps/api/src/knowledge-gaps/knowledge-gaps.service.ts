@@ -58,7 +58,7 @@ export class KnowledgeGapsService {
   async recordIfGap(input: RecordGapInput): Promise<void> {
     if (!this.config.env.KNOWLEDGE_GAPS_ENABLED) return;
 
-    const verdict = this.classify(input.evidence);
+    const verdict = this.classifyEvidence(input.evidence);
     if (!verdict) return; // adequately answered -> not a gap
 
     try {
@@ -69,8 +69,17 @@ export class KnowledgeGapsService {
     }
   }
 
-  /** Deterministic classification from retrieval output. */
-  private classify(evidence: GapEvidence[]): {
+  /**
+   * Deterministic gap classification from retrieval output — the SINGLE
+   * implementation used by live chat, evaluation, and threshold simulation.
+   * `adequacyScore` defaults to the configured value; evaluation passes candidate
+   * values to simulate thresholds against preserved scores. Returns null when the
+   * evidence is adequate (i.e. not a gap).
+   */
+  classifyEvidence(
+    evidence: GapEvidence[],
+    adequacyScore: number = this.config.env.KNOWLEDGE_GAPS_ADEQUACY_SCORE,
+  ): {
     reason: GapReason;
     outcome: GapRetrievalOutcome;
     topScore: number | null;
@@ -80,7 +89,7 @@ export class KnowledgeGapsService {
       return { reason: 'no_relevant_knowledge', outcome: 'no_results', topScore: null, weakMatches: [] };
     }
     const topScore = Math.max(...evidence.map((e) => e.score));
-    if (topScore < this.config.env.KNOWLEDGE_GAPS_ADEQUACY_SCORE) {
+    if (topScore < adequacyScore) {
       const weakMatches = [...evidence]
         .sort((a, b) => b.score - a.score)
         .slice(0, 3)

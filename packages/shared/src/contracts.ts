@@ -10,6 +10,7 @@ import type { SourceType } from './enums.js';
 export const QUEUE = {
   Ingest: 'ingest',
   Sync: 'sync',
+  Eval: 'eval',
 } as const;
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
 
@@ -52,4 +53,14 @@ export interface SyncJobV1 {
   reconcileDeletes?: boolean;
 }
 
-export type QueueJobPayload = IngestJobV1 | SyncJobV1;
+/** Run every case of an eval dataset through the production retrieval path. */
+export interface RagEvalJobV1 {
+  contractVersion: 1;
+  jobType: 'rag_eval_run';
+  organizationId: string;
+  datasetId: string;
+  runId: string;
+  spaceId: string;
+}
+
+export type QueueJobPayload = IngestJobV1 | SyncJobV1 | RagEvalJobV1;

@@ -9,6 +9,7 @@ import {
   Cloud,
   FolderPlus,
   HardDrive,
+  FlaskConical,
   Home,
   Lightbulb,
   LogOut,
@@ -44,8 +45,11 @@ const NAV = [
   { href: '/connectors', label: 'Connected sources', icon: Plug },
 ];
 
-// Owner/admin-only nav (mirrors the API RolesGuard on /knowledge-gaps).
-const ADMIN_NAV = [{ href: '/knowledge-gaps', label: 'Knowledge Gaps', icon: Lightbulb }];
+// Owner/admin-only nav (mirrors the API RolesGuard).
+const ADMIN_NAV = [
+  { href: '/knowledge-gaps', label: 'Knowledge Gaps', icon: Lightbulb },
+  { href: '/evaluation', label: 'Evaluation', icon: FlaskConical },
+];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();

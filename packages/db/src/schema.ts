@@ -331,6 +331,78 @@ export interface KnowledgeGapSignalsTable {
   created_at: GenTimestamp;
 }
 
+export type RagEvalRunStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type RagEvalRelevance = 'primary' | 'acceptable';
+
+export interface RagEvalDatasetsTable {
+  id: Generated<string>;
+  organization_id: string;
+  name: string;
+  description: Nullable<string>;
+  created_by: Nullable<string>;
+  created_at: GenTimestamp;
+  updated_at: GenTimestamp;
+}
+
+export interface RagEvalCasesTable {
+  id: Generated<string>;
+  organization_id: string;
+  dataset_id: string;
+  question: string;
+  expected_answerable: WithDefault<boolean>;
+  expected_gap: WithDefault<boolean>;
+  notes: Nullable<string>;
+  created_by: Nullable<string>;
+  created_at: GenTimestamp;
+  updated_at: GenTimestamp;
+}
+
+export interface RagEvalCaseExpectedDocumentsTable {
+  id: Generated<string>;
+  organization_id: string;
+  eval_case_id: string;
+  document_id: string;
+  relevance: WithDefault<RagEvalRelevance>;
+  created_at: GenTimestamp;
+}
+
+export interface RagEvalRunsTable {
+  id: Generated<string>;
+  organization_id: string;
+  dataset_id: string;
+  status: WithDefault<RagEvalRunStatus>;
+  started_by: Nullable<string>;
+  config_snapshot: JsonCol;
+  summary_metrics: JsonCol;
+  total_cases: WithDefault<number>;
+  succeeded_cases: WithDefault<number>;
+  errored_cases: WithDefault<number>;
+  error: Nullable<string>;
+  started_at: NullTimestamp;
+  completed_at: NullTimestamp;
+  created_at: GenTimestamp;
+}
+
+export interface RagEvalResultsTable {
+  id: Generated<string>;
+  organization_id: string;
+  run_id: string;
+  eval_case_id: Nullable<string>;
+  question: string;
+  expected_answerable: boolean;
+  expected_gap: boolean;
+  expected_documents: JsonArr;
+  retrieval: JsonCol;
+  top_score: Nullable<number>;
+  expected_document_found: Nullable<boolean>;
+  expected_document_best_rank: Nullable<number>;
+  actual_answerable: Nullable<boolean>;
+  actual_gap: Nullable<boolean>;
+  gap_reason: Nullable<string>;
+  error: Nullable<string>;
+  created_at: GenTimestamp;
+}
+
 export interface DB {
   organizations: OrganizationsTable;
   users: UsersTable;
@@ -351,4 +423,9 @@ export interface DB {
   audit_logs: AuditLogsTable;
   knowledge_gaps: KnowledgeGapsTable;
   knowledge_gap_signals: KnowledgeGapSignalsTable;
+  rag_eval_datasets: RagEvalDatasetsTable;
+  rag_eval_cases: RagEvalCasesTable;
+  rag_eval_case_expected_documents: RagEvalCaseExpectedDocumentsTable;
+  rag_eval_runs: RagEvalRunsTable;
+  rag_eval_results: RagEvalResultsTable;
 }
