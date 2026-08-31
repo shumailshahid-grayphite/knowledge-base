@@ -41,8 +41,8 @@ export default function EvaluationPage() {
             <FlaskConical className="h-5 w-5 text-primary" /> Evaluation
           </h1>
           <p className="text-sm text-muted-foreground">
-            Labelled question sets run against the live retrieval pipeline, so you can tell whether a
-            change made RAG better or worse — with evidence, not vibes.
+            Build a set of real questions with the answers you expect, then check how well the assistant
+            handles them. It’s a report card — so when you change something, you can see if it got better or worse.
           </p>
         </div>
         <button

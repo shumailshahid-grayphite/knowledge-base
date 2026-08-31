@@ -71,8 +71,8 @@ export default function DatasetPage() {
                 <Badge variant={r.status === 'completed' ? 'success' : r.status === 'failed' ? 'destructive' : 'secondary'}>{r.status}</Badge>
                 <span className="text-muted-foreground">{formatDate(r.createdAt)}</span>
                 {r.summaryMetrics && (
-                  <span className="ml-auto font-mono text-xs text-muted-foreground">
-                    R@3 {Math.round(r.summaryMetrics.retrieval.recallAt3 * 100)}% · gap P {Math.round(r.summaryMetrics.gap.confusion.precision * 100)}%
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    right doc in top 3: {Math.round(r.summaryMetrics.retrieval.recallAt3 * 100)}% · gaps caught: {Math.round(r.summaryMetrics.gap.confusion.recall * 100)}%
                   </span>
                 )}
               </Link>
@@ -111,10 +111,10 @@ export default function DatasetPage() {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm">{c.question}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-                    <Badge variant={c.expectedAnswerable ? 'secondary' : 'outline'}>{c.expectedAnswerable ? 'answerable' : 'not answerable'}</Badge>
-                    {c.expectedGap && <Badge variant="outline">expected gap</Badge>}
+                    <Badge variant={c.expectedAnswerable ? 'secondary' : 'outline'}>{c.expectedAnswerable ? 'should answer' : 'shouldn’t answer'}</Badge>
+                    {c.expectedGap && <Badge variant="outline">missing knowledge</Badge>}
                     {c.expectedDocuments.map((d) => (
-                      <span key={d.documentId} className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
+                      <span key={d.documentId} className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground" title={d.relevance === 'primary' ? 'best source' : 'also acceptable'}>
                         {d.relevance === 'primary' ? '★' : '○'} {d.documentName}
                       </span>
                     ))}
@@ -160,17 +160,20 @@ function CaseForm({ initial, onCancel, onSave }: { initial?: EvalCase; onCancel:
 
   return (
     <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+      <div className="text-xs text-muted-foreground">
+        A test case is a real question plus what you expect the assistant to do with it.
+      </div>
       <textarea
         autoFocus
         value={question}
         onChange={(e) => setQuestion(e.target.value)}
         rows={2}
-        placeholder="Question — e.g. What is our maternity leave policy?"
+        placeholder="A question a colleague might ask — e.g. What is our maternity leave policy?"
         className="w-full rounded-md border px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
-      <div className="flex flex-wrap gap-4 text-sm">
-        <Toggle label="Answerable from KB" value={answerable} onChange={setAnswerable} />
-        <Toggle label="Expected knowledge gap" value={gap} onChange={setGap} />
+      <div className="flex flex-col gap-2 text-sm">
+        <Toggle label="Our documents should be able to answer this" value={answerable} onChange={setAnswerable} />
+        <Toggle label="This is missing from our knowledge (a gap the system should flag)" value={gap} onChange={setGap} />
       </div>
       <DocPicker docs={docs} onChange={setDocs} />
       <div className="flex justify-end gap-2">
@@ -219,7 +222,9 @@ function DocPicker({ docs, onChange }: { docs: ExpectedDocument[]; onChange: (d:
 
   return (
     <div>
-      <div className="mb-1 text-xs font-medium text-muted-foreground">Expected documents (optional)</div>
+      <div className="mb-1 text-xs font-medium text-muted-foreground">
+        Which document should hold the answer? <span className="font-normal">(optional · ★ best source, ○ also acceptable — click the star to toggle)</span>
+      </div>
       <div className="flex flex-wrap gap-1.5">
         {docs.map((d) => (
           <span key={d.documentId} className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-xs">

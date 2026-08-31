@@ -37,6 +37,7 @@ import {
   folderIdFromPath,
   type ChatSummary,
 } from '@/lib/kb';
+import { SHOW_EVALUATION } from '@/lib/flags';
 import { cn } from '@/lib/utils';
 
 const NAV = [
@@ -45,10 +46,11 @@ const NAV = [
   { href: '/connectors', label: 'Connected sources', icon: Plug },
 ];
 
-// Owner/admin-only nav (mirrors the API RolesGuard).
+// Owner/admin-only nav (mirrors the API RolesGuard). Evaluation is built and
+// working but hidden for now (see lib/flags).
 const ADMIN_NAV = [
   { href: '/knowledge-gaps', label: 'Knowledge Gaps', icon: Lightbulb },
-  { href: '/evaluation', label: 'Evaluation', icon: FlaskConical },
+  ...(SHOW_EVALUATION ? [{ href: '/evaluation', label: 'Evaluation', icon: FlaskConical }] : []),
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

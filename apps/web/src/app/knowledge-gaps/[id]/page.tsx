@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useKnowledgeGap, updateGapStatus, isAdminRole } from '@/lib/gaps';
 import { useDatasets, createCase } from '@/lib/eval';
+import { SHOW_EVALUATION } from '@/lib/flags';
 import { Badge } from '@/components/ui/badge';
 import { formatDate } from '@/lib/utils';
 import { GapStatusBadge } from '@/components/gap-status-badge';
@@ -50,9 +51,11 @@ export default function KnowledgeGapDetailPage() {
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <button onClick={() => setAddOpen(true)} className="rounded-full border px-4 py-1.5 text-sm font-medium hover:bg-accent">
-            Add to evaluation
-          </button>
+          {SHOW_EVALUATION && (
+            <button onClick={() => setAddOpen(true)} className="rounded-full border px-4 py-1.5 text-sm font-medium hover:bg-accent">
+              Add to evaluation
+            </button>
+          )}
           {gap.status !== 'resolved' && (
             <button onClick={() => setStatus('resolved')} className="rounded-full border px-4 py-1.5 text-sm font-medium hover:bg-accent">
               Resolve
